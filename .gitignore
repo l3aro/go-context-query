@@ -43,3 +43,4 @@ build/
 # Agent/IDE configs
 .agents/
 .windsurf/
+.sisyphus/
