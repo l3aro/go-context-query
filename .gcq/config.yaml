@@ -1,0 +1,29 @@
+# go-context-query configuration
+# Copy to ~/.gcq/config.yaml
+
+# Embedding provider: "ollama" or "huggingface"
+provider: ollama
+
+# Ollama settings
+ollama_model: nomic-embed-text
+ollama_base_url: http://localhost:11434
+ollama_api_key: ""
+
+# HuggingFace settings (if provider is "huggingface")
+# hf_model: sentence-transformers/all-MiniLM-L6-v2
+# hf_token: ""
+
+# IPC socket path
+socket_path: /tmp/gcq.sock
+
+# Context gathering thresholds
+threshold_similarity: 0.7
+threshold_min_score: 0.5
+
+# Context settings
+max_context_chunks: 10
+chunk_overlap: 100
+chunk_size: 512
+
+# Logging
+verbose: false
