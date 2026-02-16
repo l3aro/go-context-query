@@ -1,4 +1,4 @@
-module github.com/user/go-context-query
+module github.com/l3aro/go-context-query
 
 go 1.21
 
