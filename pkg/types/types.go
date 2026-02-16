@@ -1,3 +1,5 @@
+// Package types defines the core data structures for code representation.
+// It includes types for functions, classes, imports, call graphs, and module information.
 package types
 
 // Function represents a function definition

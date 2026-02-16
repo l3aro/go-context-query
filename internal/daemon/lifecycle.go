@@ -98,7 +98,8 @@ func RemovePID() error {
 	return nil
 }
 
-// PIDExists checks if the PID file exists
+// PIDExists checks if the PID file exists.
+// Uses os.Stat error check pattern intentionally - we only care about existence.
 func PIDExists() bool {
 	_, err := os.Stat(PIDFile())
 	return err == nil

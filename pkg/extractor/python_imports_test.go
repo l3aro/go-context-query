@@ -3,7 +3,7 @@ package extractor
 import (
 	"testing"
 
-	"github.com/user/go-context-query/pkg/types"
+	"github.com/l3aro/go-context-query/pkg/types"
 )
 
 func TestParsePythonImports(t *testing.T) {

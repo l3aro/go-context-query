@@ -6,8 +6,8 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
-	"github.com/user/go-context-query/pkg/extractor"
-	"github.com/user/go-context-query/pkg/types"
+	"github.com/l3aro/go-context-query/pkg/extractor"
+	"github.com/l3aro/go-context-query/pkg/types"
 )
 
 // extractCmd represents the extract command

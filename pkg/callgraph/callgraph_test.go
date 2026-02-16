@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/user/go-context-query/pkg/extractor"
-	"github.com/user/go-context-query/pkg/types"
+	"github.com/l3aro/go-context-query/pkg/extractor"
+	"github.com/l3aro/go-context-query/pkg/types"
 )
 
 // TestBuilderBasicCallGraph tests basic call graph building

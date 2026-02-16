@@ -7,10 +7,10 @@ import (
 	"path/filepath"
 
 	"github.com/spf13/cobra"
-	"github.com/user/go-context-query/internal/config"
-	"github.com/user/go-context-query/internal/daemon"
-	"github.com/user/go-context-query/pkg/embed"
-	"github.com/user/go-context-query/pkg/semantic"
+	"github.com/l3aro/go-context-query/internal/config"
+	"github.com/l3aro/go-context-query/internal/daemon"
+	"github.com/l3aro/go-context-query/pkg/embed"
+	"github.com/l3aro/go-context-query/pkg/semantic"
 )
 
 // WarmOutput represents the output of the warm command

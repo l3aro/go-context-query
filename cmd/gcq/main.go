@@ -1,3 +1,6 @@
+// Package main implements the go-context-query CLI (gcq).
+// It provides commands for building semantic indexes, querying code context,
+// and managing the daemon.
 package main
 
 import (
@@ -6,12 +9,12 @@ import (
 	"os"
 	"time"
 
+	"github.com/l3aro/go-context-query/cmd/gcq/commands"
+	"github.com/l3aro/go-context-query/internal/config"
+	"github.com/l3aro/go-context-query/internal/daemon"
+	"github.com/l3aro/go-context-query/pkg/embed"
+	"github.com/l3aro/go-context-query/pkg/semantic"
 	"github.com/spf13/cobra"
-	"github.com/user/go-context-query/cmd/gcq/commands"
-	"github.com/user/go-context-query/internal/config"
-	"github.com/user/go-context-query/internal/daemon"
-	"github.com/user/go-context-query/pkg/embed"
-	"github.com/user/go-context-query/pkg/semantic"
 )
 
 func main() {

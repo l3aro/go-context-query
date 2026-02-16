@@ -1,0 +1,44 @@
+# golangci-lint configuration
+# https://golangci-lint.run/usage/configuration/
+
+run:
+  timeout: 5m
+  modules-download-mode: readonly
+
+linters:
+  enable:
+    - gofmt          # checks whether code was gofmt-ed
+    - goimports      # checks whether code was goimports-ed
+    - errcheck       # checks for unchecked errors
+    - gosimple       # simplifies code
+    - govet          # reports suspicious constructs
+    - ineffassign    # detects unused variable assignments
+    - staticcheck    # is a go vet on steroids
+    - unused         # checks for unused code
+    - gosec          # inspects source code for security problems
+    - typecheck      # type-checking
+
+linters-settings:
+  errcheck:
+    check-type-assertions: true
+    check-blank: true
+  gosec:
+    excludes:
+      - G204 # Subprocess execution - allowed for build tools
+      - G107 # URL potential SSRF - allowed for embedding providers
+  govet:
+    enable-all: true
+  gofmt:
+    simplify: true
+  goimports:
+    local-prefixes: github.com/l3aro/go-context-query
+
+issues:
+  exclude-use-default: false
+  max-issues-per-linter: 0
+  max-same-issues: 0
+
+output:
+  format: colored-line-number
+  print-issued-lines: true
+  print-linter-name: true

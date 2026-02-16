@@ -1,3 +1,5 @@
+// Package index provides a simple in-memory vector index with cosine similarity search.
+// It is used for semantic code search over embedded code units.
 package index
 
 import (
@@ -6,7 +8,7 @@ import (
 	"os"
 	"sort"
 
-	"github.com/user/go-context-query/pkg/types"
+	"github.com/l3aro/go-context-query/pkg/types"
 	"github.com/vmihailenco/msgpack/v5"
 )
 
@@ -308,4 +310,31 @@ func (v *VectorIndex) ReadFrom(r io.Reader) (int64, error) {
 	v.metadata = data.Metadata
 
 	return int64(len(v.ids)), nil
+}
+
+// ExampleVectorIndex demonstrates basic VectorIndex usage
+func ExampleVectorIndex() {
+	// Create a new index with 3-dimensional vectors
+	idx := NewVectorIndex(3)
+
+	// Add vectors with metadata
+	idx.Add("doc1", []float32{1.0, 0.0, 0.0}, types.EmbeddingUnit{
+		L1Data: types.ModuleInfo{Path: "main.py"},
+	})
+	idx.Add("doc2", []float32{0.0, 1.0, 0.0}, types.EmbeddingUnit{
+		L1Data: types.ModuleInfo{Path: "utils.py"},
+	})
+	idx.Add("doc3", []float32{0.0, 0.0, 1.0}, types.EmbeddingUnit{
+		L1Data: types.ModuleInfo{Path: "helpers.py"},
+	})
+
+	// Search for similar vectors
+	results, _ := idx.Search([]float32{0.9, 0.1, 0.0}, 2)
+
+	fmt.Printf("Found %d results\n", len(results))
+	fmt.Printf("Top result: %s (score: %.2f)\n", results[0].ID, results[0].Score)
+
+	// Output:
+	// Found 2 results
+	// Top result: doc1 (score: 0.99)
 }

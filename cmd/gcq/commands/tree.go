@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
-	"github.com/user/go-context-query/internal/scanner"
+	"github.com/l3aro/go-context-query/internal/scanner"
 )
 
 // TreeNode represents a node in the file tree for JSON output

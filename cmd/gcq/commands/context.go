@@ -8,10 +8,10 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
-	"github.com/user/go-context-query/internal/scanner"
-	"github.com/user/go-context-query/pkg/callgraph"
-	"github.com/user/go-context-query/pkg/extractor"
-	"github.com/user/go-context-query/pkg/types"
+	"github.com/l3aro/go-context-query/internal/scanner"
+	"github.com/l3aro/go-context-query/pkg/callgraph"
+	"github.com/l3aro/go-context-query/pkg/extractor"
+	"github.com/l3aro/go-context-query/pkg/types"
 )
 
 // ContextOutput represents the LLM context output

@@ -1,3 +1,5 @@
+// Package commands provides the CLI commands for the go-context-query tool.
+// It uses Cobra for command-line interface implementation.
 package commands
 
 import (

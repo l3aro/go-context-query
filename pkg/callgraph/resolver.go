@@ -9,8 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/user/go-context-query/pkg/extractor"
-	"github.com/user/go-context-query/pkg/types"
+	"github.com/l3aro/go-context-query/pkg/extractor"
+	"github.com/l3aro/go-context-query/pkg/types"
 )
 
 // FunctionIndex maps qualified function names to their file paths.

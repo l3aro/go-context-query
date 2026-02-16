@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/user/go-context-query/pkg/embed"
-	"github.com/user/go-context-query/pkg/index"
+	"github.com/l3aro/go-context-query/pkg/embed"
+	"github.com/l3aro/go-context-query/pkg/index"
 )
 
 // GemmaQueryPrefix is the instruction prefix for Gemma models

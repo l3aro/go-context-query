@@ -11,12 +11,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/user/go-context-query/internal/scanner"
-	"github.com/user/go-context-query/pkg/callgraph"
-	"github.com/user/go-context-query/pkg/embed"
-	"github.com/user/go-context-query/pkg/extractor"
-	"github.com/user/go-context-query/pkg/index"
-	"github.com/user/go-context-query/pkg/types"
+	"github.com/l3aro/go-context-query/internal/scanner"
+	"github.com/l3aro/go-context-query/pkg/callgraph"
+	"github.com/l3aro/go-context-query/pkg/embed"
+	"github.com/l3aro/go-context-query/pkg/extractor"
+	"github.com/l3aro/go-context-query/pkg/index"
+	"github.com/l3aro/go-context-query/pkg/types"
 )
 
 // CodeUnit represents a single unit of code ready for embedding.
@@ -508,7 +508,7 @@ func saveMetadata(path string, metadata IndexMetadata) error {
 	if err != nil {
 		return fmt.Errorf("marshaling metadata: %w", err)
 	}
-	if err := os.WriteFile(path, data, 0644); err != nil {
+	if err := os.WriteFile(path, data, 0600); err != nil {
 		return fmt.Errorf("writing metadata: %w", err)
 	}
 	return nil

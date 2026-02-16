@@ -7,9 +7,9 @@ import (
 	"path/filepath"
 
 	"github.com/spf13/cobra"
-	"github.com/user/go-context-query/internal/scanner"
-	"github.com/user/go-context-query/pkg/extractor"
-	"github.com/user/go-context-query/pkg/types"
+	"github.com/l3aro/go-context-query/internal/scanner"
+	"github.com/l3aro/go-context-query/pkg/extractor"
+	"github.com/l3aro/go-context-query/pkg/types"
 )
 
 // StructureOutput represents the output structure for JSON

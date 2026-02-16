@@ -1,3 +1,5 @@
+// Package log provides structured logging with level support, JSON output, and progress indicators.
+// It includes a default logger and utilities for spinner animations.
 package log
 
 import (

@@ -8,14 +8,14 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/user/go-context-query/internal/config"
-	"github.com/user/go-context-query/internal/scanner"
-	"github.com/user/go-context-query/pkg/callgraph"
-	"github.com/user/go-context-query/pkg/embed"
-	"github.com/user/go-context-query/pkg/extractor"
-	"github.com/user/go-context-query/pkg/index"
-	"github.com/user/go-context-query/pkg/search"
-	"github.com/user/go-context-query/pkg/types"
+	"github.com/l3aro/go-context-query/internal/config"
+	"github.com/l3aro/go-context-query/internal/scanner"
+	"github.com/l3aro/go-context-query/pkg/callgraph"
+	"github.com/l3aro/go-context-query/pkg/embed"
+	"github.com/l3aro/go-context-query/pkg/extractor"
+	"github.com/l3aro/go-context-query/pkg/index"
+	"github.com/l3aro/go-context-query/pkg/search"
+	"github.com/l3aro/go-context-query/pkg/types"
 )
 
 // Executor performs direct execution when daemon is unavailable

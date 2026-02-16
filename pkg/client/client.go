@@ -123,7 +123,7 @@ func (c *Client) connect() (net.Conn, error) {
 }
 
 // sendCommand sends a command to the daemon and returns the response
-func (c *Client) sendCommand(ctx context.Context, cmdType string, params interface{}) (map[string]interface{}, error) {
+func (c *Client) sendCommand(ctx context.Context, cmdType string, params any) (map[string]any, error) {
 	conn, err := c.connect()
 	if err != nil {
 		return nil, err
@@ -141,7 +141,7 @@ func (c *Client) sendCommand(ctx context.Context, cmdType string, params interfa
 	}
 
 	// Create command
-	cmd := map[string]interface{}{
+	cmd := map[string]any{
 		"type": cmdType,
 		"id":   generateID(),
 	}
@@ -162,7 +162,7 @@ func (c *Client) sendCommand(ctx context.Context, cmdType string, params interfa
 
 	// Read response
 	decoder := json.NewDecoder(conn)
-	var resp map[string]interface{}
+	var resp map[string]any
 	if err := decoder.Decode(&resp); err != nil {
 		return nil, fmt.Errorf("reading response: %w", err)
 	}

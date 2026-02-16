@@ -46,7 +46,7 @@ type Config struct {
 	Verbose bool `yaml:"verbose" env:"GCQ_VERBOSE"`
 }
 
-// DefaultConfig returns a Config with sensible defaults
+// DefaultConfig returns a Config with sensible defaults.
 func DefaultConfig() *Config {
 	return &Config{
 		Provider:            ProviderOllama,

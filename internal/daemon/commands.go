@@ -3,6 +3,7 @@
 package daemon
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -122,7 +123,11 @@ func Start(opts *StartOptions) (*StartResult, error) {
 			timeout = ReadyTimeout
 		}
 
-		ready, err := waitForReady(timeout)
+		// Create a context with timeout for waiting
+		waitCtx, cancel := context.WithTimeout(context.Background(), timeout)
+		defer cancel()
+
+		ready, err := waitForReady(waitCtx, timeout)
 		if err != nil {
 			// Try to kill the process
 			cmd.Process.Kill()
@@ -177,11 +182,26 @@ func findDaemonBinary() string {
 	return "gcqd"
 }
 
-// waitForReady waits for the daemon to be ready
-func waitForReady(timeout time.Duration) (bool, error) {
+// waitForReady waits for the daemon to be ready.
+// It checks the context for cancellation and respects context deadlines.
+func waitForReady(ctx context.Context, timeout time.Duration) (bool, error) {
 	deadline := time.Now().Add(timeout)
 
+	// Use earlier of context deadline or timeout
+	if d, ok := ctx.Deadline(); ok {
+		if d.Before(deadline) {
+			deadline = d
+		}
+	}
+
 	for time.Now().Before(deadline) {
+		// Check for context cancellation
+		select {
+		case <-ctx.Done():
+			return false, fmt.Errorf("context cancelled: %w", ctx.Err())
+		default:
+		}
+
 		status, err := CheckStatus()
 		if err == nil && status.Running && status.Ready {
 			return true, nil

@@ -7,11 +7,11 @@ import (
 	"path/filepath"
 
 	"github.com/spf13/cobra"
-	"github.com/user/go-context-query/internal/daemon"
-	"github.com/user/go-context-query/internal/scanner"
-	"github.com/user/go-context-query/pkg/callgraph"
-	"github.com/user/go-context-query/pkg/extractor"
-	"github.com/user/go-context-query/pkg/types"
+	"github.com/l3aro/go-context-query/internal/daemon"
+	"github.com/l3aro/go-context-query/internal/scanner"
+	"github.com/l3aro/go-context-query/pkg/callgraph"
+	"github.com/l3aro/go-context-query/pkg/extractor"
+	"github.com/l3aro/go-context-query/pkg/types"
 )
 
 // CallGraphOutput represents the output of the calls command

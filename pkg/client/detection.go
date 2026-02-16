@@ -227,7 +227,8 @@ func pingDaemon() bool {
 	return true
 }
 
-// pidFileExists checks if the PID file exists
+// pidFileExists checks if the PID file exists.
+// Uses os.Stat error check pattern intentionally - we only care about existence.
 func pidFileExists() bool {
 	_, err := os.Stat(PIDFile())
 	return err == nil

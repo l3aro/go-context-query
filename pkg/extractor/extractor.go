@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/l3aro/go-context-query/pkg/types"
 	sitter "github.com/smacker/go-tree-sitter"
-	"github.com/user/go-context-query/pkg/types"
 )
 
 // Extractor defines the interface for language-specific AST extractors.
@@ -151,4 +151,22 @@ func ExtractFile(filePath string) (*types.ModuleInfo, error) {
 		return nil, err
 	}
 	return extractor.Extract(filePath)
+}
+
+// ExampleLanguageRegistry demonstrates LanguageRegistry usage
+func ExampleLanguageRegistry() {
+	registry := NewLanguageRegistry()
+
+	// Check if a file is supported
+	fmt.Printf("Python supported: %v\n", registry.IsSupported("test.py"))
+	fmt.Printf("Go supported: %v\n", registry.IsSupported("test.go"))
+
+	// Get supported extensions
+	exts := registry.GetSupportedExtensions()
+	fmt.Printf("Supported extensions: %v\n", exts)
+
+	// Output:
+	// Python supported: true
+	// Go supported: false
+	// Supported extensions: [.py .pyw .pyi]
 }
