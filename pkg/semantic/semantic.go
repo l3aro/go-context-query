@@ -467,7 +467,7 @@ func BuildIndex(rootDir string, embedProvider embed.Provider) error {
 		return fmt.Errorf("building index: %w", err)
 	}
 
-	if vecIndex.Count() == 0 {
+	if vecIndex == nil || vecIndex.Count() == 0 {
 		fmt.Println("No code units found to index")
 		return nil
 	}

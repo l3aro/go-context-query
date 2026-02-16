@@ -64,8 +64,8 @@ func DefaultConfig() *Config {
 	}
 }
 
-// configFilePath returns the default config file path
-func configFilePath() string {
+// globalConfigFilePath returns the global config file path (~/.gcq/config.yaml)
+func globalConfigFilePath() string {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return ".gcq/config.yaml"
@@ -73,19 +73,36 @@ func configFilePath() string {
 	return filepath.Join(home, ".gcq", "config.yaml")
 }
 
-// Load reads configuration from YAML file and applies environment variable overrides
+// projectConfigFilePath returns the project-level config file path (./.gcq/config.yaml)
+func projectConfigFilePath() string {
+	return ".gcq/config.yaml"
+}
+
+// Load reads configuration with the following priority (highest to lowest):
+// 1. Project-level config (./.gcq/config.yaml)
+// 2. Environment variables
+// 3. Global config (~/.gcq/config.yaml)
+// 4. Defaults
 func Load() (*Config, error) {
 	cfg := DefaultConfig()
 
-	// Try to load from YAML file
-	configPath := configFilePath()
-	if data, err := os.ReadFile(configPath); err == nil {
+	// 1. Load global config (~/.gcq/config.yaml)
+	globalConfigPath := globalConfigFilePath()
+	if data, err := os.ReadFile(globalConfigPath); err == nil {
 		if err := yaml.Unmarshal(data, cfg); err != nil {
-			return nil, fmt.Errorf("failed to parse config file %s: %w", configPath, err)
+			return nil, fmt.Errorf("failed to parse config file %s: %w", globalConfigPath, err)
 		}
 	}
 
-	// Override with environment variables
+	// 2. Load project-level config (./.gcq/config.yaml) - overrides global
+	projectConfigPath := projectConfigFilePath()
+	if data, err := os.ReadFile(projectConfigPath); err == nil {
+		if err := yaml.Unmarshal(data, cfg); err != nil {
+			return nil, fmt.Errorf("failed to parse config file %s: %w", projectConfigPath, err)
+		}
+	}
+
+	// 3. Override with environment variables
 	applyEnvOverrides(cfg)
 
 	// Validate the configuration
