@@ -135,7 +135,7 @@ func NewBuilder(rootDir string, embedProvider embed.Provider) (*Builder, error) 
 		cacheDir:          cacheDir,
 		scanner:           scanner.New(scanner.DefaultOptions()),
 		extractor:         extractor.NewLanguageRegistry(),
-		callGraphResolver: callgraph.NewResolver(absRoot),
+		callGraphResolver: callgraph.NewResolver(absRoot, extractor.NewPythonExtractor()),
 		embedProvider:     embedProvider,
 		vectorIndex:       nil,
 		codeUnits:         nil,

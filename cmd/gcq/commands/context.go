@@ -7,11 +7,11 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/spf13/cobra"
 	"github.com/l3aro/go-context-query/internal/scanner"
 	"github.com/l3aro/go-context-query/pkg/callgraph"
 	"github.com/l3aro/go-context-query/pkg/extractor"
 	"github.com/l3aro/go-context-query/pkg/types"
+	"github.com/spf13/cobra"
 )
 
 // ContextOutput represents the LLM context output
@@ -76,7 +76,7 @@ var contextCmd = &cobra.Command{
 		}
 
 		// Build call graph resolver
-		resolver := callgraph.NewResolver(rootDir)
+		resolver := callgraph.NewResolver(rootDir, extractor.NewPythonExtractor())
 
 		// Build index and call graph
 		if err := resolver.BuildIndex(supportedFiles); err != nil {

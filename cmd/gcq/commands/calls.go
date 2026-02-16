@@ -6,12 +6,12 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/spf13/cobra"
 	"github.com/l3aro/go-context-query/internal/daemon"
 	"github.com/l3aro/go-context-query/internal/scanner"
 	"github.com/l3aro/go-context-query/pkg/callgraph"
 	"github.com/l3aro/go-context-query/pkg/extractor"
 	"github.com/l3aro/go-context-query/pkg/types"
+	"github.com/spf13/cobra"
 )
 
 // CallGraphOutput represents the output of the calls command
@@ -102,7 +102,7 @@ func runCallsLocally(path string, cmd *cobra.Command) error {
 	}
 
 	// Build call graph
-	resolver := callgraph.NewResolver(rootDir)
+	resolver := callgraph.NewResolver(rootDir, extractor.NewPythonExtractor())
 	callGraph, err := resolver.ResolveCalls(supportedFiles)
 	if err != nil {
 		return fmt.Errorf("building call graph: %w", err)

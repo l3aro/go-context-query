@@ -6,9 +6,9 @@ import (
 	"os"
 	"strings"
 
+	"github.com/l3aro/go-context-query/pkg/types"
 	sitter "github.com/smacker/go-tree-sitter"
 	"github.com/smacker/go-tree-sitter/python"
-	"github.com/l3aro/go-context-query/pkg/types"
 )
 
 // PythonExtractor implements the Extractor interface for Python files.
@@ -25,6 +25,16 @@ func NewPythonExtractor() Extractor {
 		BaseExtractor: NewBaseExtractor(NewPythonParser(), Python),
 		importParser:  NewPythonImportParser(),
 	}
+}
+
+// Language returns the language identifier for Python.
+func (e *PythonExtractor) Language() Language {
+	return Python
+}
+
+// FileExtensions returns the file extensions supported by Python.
+func (e *PythonExtractor) FileExtensions() []string {
+	return []string{".py", ".pyw", ".pyi"}
 }
 
 // Extract parses a Python file and returns structured module information.

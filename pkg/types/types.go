@@ -26,6 +26,48 @@ type Class struct {
 	LineNumber int      `json:"line_number"`
 }
 
+// Interface represents an interface definition (e.g., Go interfaces, TypeScript interfaces)
+type Interface struct {
+	Name       string   `json:"name"`
+	Bases      []string `json:"bases,omitempty"`
+	Docstring  string   `json:"docstring"`
+	Methods    []Method `json:"methods"`
+	LineNumber int      `json:"line_number"`
+}
+
+// Trait represents a trait definition (e.g., Rust traits, PHP traits)
+type Trait struct {
+	Name       string   `json:"name"`
+	Docstring  string   `json:"docstring"`
+	Methods    []Method `json:"methods"`
+	LineNumber int      `json:"line_number"`
+}
+
+// Protocol represents a protocol definition (e.g., Swift protocols)
+type Protocol struct {
+	Name       string   `json:"name"`
+	Bases      []string `json:"bases,omitempty"`
+	Docstring  string   `json:"docstring"`
+	Methods    []Method `json:"methods"`
+	LineNumber int      `json:"line_number"`
+}
+
+// Enum represents an enum definition (e.g., Rust enums, TypeScript enums, Go iota)
+type Enum struct {
+	Name       string   `json:"name"`
+	Variants   []string `json:"variants,omitempty"`
+	Docstring  string   `json:"docstring"`
+	LineNumber int      `json:"line_number"`
+}
+
+// Struct represents a struct definition (e.g., Go structs, C structs)
+type Struct struct {
+	Name       string   `json:"name"`
+	Docstring  string   `json:"docstring"`
+	Fields     []string `json:"fields,omitempty"`
+	LineNumber int      `json:"line_number"`
+}
+
 // Import represents an import statement
 type Import struct {
 	Module     string   `json:"module"`
@@ -50,15 +92,21 @@ type CallGraph struct {
 
 // ModuleInfo contains all extracted information about a module
 type ModuleInfo struct {
-	Path       string     `json:"path"`
-	Functions  []Function `json:"functions"`
-	Classes    []Class    `json:"classes"`
-	Imports    []Import   `json:"imports"`
-	CallGraph  CallGraph  `json:"call_graph"`
-	LineNumber int        `json:"line_number,omitempty"`
-	Signature  string     `json:"signature,omitempty"`
-	Docstring  string     `json:"docstring,omitempty"`
-	Type       string     `json:"type,omitempty"`
+	Path       string      `json:"path"`
+	Functions  []Function  `json:"functions"`
+	Classes    []Class     `json:"classes"`
+	Imports    []Import    `json:"imports"`
+	CallGraph  CallGraph   `json:"call_graph"`
+	LineNumber int         `json:"line_number,omitempty"`
+	Signature  string      `json:"signature,omitempty"`
+	Docstring  string      `json:"docstring,omitempty"`
+	Type       string      `json:"type,omitempty"`
+	Language   string      `json:"language,omitempty"`
+	Interfaces []Interface `json:"interfaces,omitempty"`
+	Traits     []Trait     `json:"traits,omitempty"`
+	Protocols  []Protocol  `json:"protocols,omitempty"`
+	Enums      []Enum      `json:"enums,omitempty"`
+	Structs    []Struct    `json:"structs,omitempty"`
 }
 
 // EmbeddingUnit combines L1 (local) and L2 (cross-file) context data

@@ -25,7 +25,9 @@ func TestLanguageRegistry(t *testing.T) {
 		{"test.py", Python, false},
 		{"test.pyw", Python, false},
 		{"test.pyi", Python, false},
-		{"test.go", "", true},
+		{"test.go", Go, false},
+		{"test.ts", TypeScript, false},
+		{"test.js", JavaScript, false},
 		{"test", "", true},
 	}
 
@@ -54,8 +56,9 @@ func TestIsSupported(t *testing.T) {
 		{"test.py", true},
 		{"/path/to/file.py", true},
 		{"test.pyw", true},
-		{"test.go", false},
-		{"test.js", false},
+		{"test.go", true},
+		{"test.ts", true},
+		{"test.js", true},
 		{"test", false},
 	}
 
@@ -212,14 +215,14 @@ func TestExtractFileWithRegistry(t *testing.T) {
 // TestExtractUnsupportedFile tests extraction of unsupported file types
 func TestExtractUnsupportedFile(t *testing.T) {
 	tmpDir := t.TempDir()
-	goFile := filepath.Join(tmpDir, "test.go")
+	unsupportedFile := filepath.Join(tmpDir, "test.xyz")
 
-	err := os.WriteFile(goFile, []byte("package main"), 0644)
+	err := os.WriteFile(unsupportedFile, []byte("unsupported content"), 0644)
 	if err != nil {
 		t.Fatalf("Failed to create test file: %v", err)
 	}
 
-	_, err = ExtractFile(goFile)
+	_, err = ExtractFile(unsupportedFile)
 	if err == nil {
 		t.Error("Expected error for unsupported file type, got nil")
 	}
@@ -245,7 +248,7 @@ func TestGetParser(t *testing.T) {
 		t.Error("GetParser() returned nil parser")
 	}
 
-	_, err = registry.GetParser("test.go")
+	_, err = registry.GetParser("test.unknown")
 	if err == nil {
 		t.Error("Expected error for unsupported file type")
 	}
@@ -286,7 +289,7 @@ func TestGetExtractor(t *testing.T) {
 		t.Error("GetExtractor() returned nil extractor")
 	}
 
-	_, err = registry.GetExtractor("test.go")
+	_, err = registry.GetExtractor("test.unknown")
 	if err == nil {
 		t.Error("Expected error for unsupported file type")
 	}

@@ -242,7 +242,8 @@ type UnresolvedCall struct {
 }
 
 // NewResolver creates a new cross-file call graph resolver.
-func NewResolver(rootDir string) *Resolver {
+// It accepts an Extractor interface to support any language.
+func NewResolver(rootDir string, ext extractor.Extractor) *Resolver {
 	return &Resolver{
 		rootDir:     rootDir,
 		index:       NewFunctionIndex(),
@@ -253,15 +254,25 @@ func NewResolver(rootDir string) *Resolver {
 			CrossFileEdges:  []types.CallGraphEdge{},
 			UnresolvedCalls: []UnresolvedCall{},
 		},
-		extractor: extractor.NewPythonExtractor(),
+		extractor: ext,
 		builder:   NewBuilder(),
 	}
 }
 
-// BuildIndex builds the function index from all Python files in the project.
+// isSupportedFile checks if a file has a supported extension for the extractor.
+func (r *Resolver) isSupportedFile(filePath string) bool {
+	for _, ext := range r.extractor.FileExtensions() {
+		if strings.HasSuffix(filePath, ext) {
+			return true
+		}
+	}
+	return false
+}
+
+// BuildIndex builds the function index from all files supported by the extractor.
 func (r *Resolver) BuildIndex(filePaths []string) error {
 	for _, filePath := range filePaths {
-		if !strings.HasSuffix(filePath, ".py") {
+		if !r.isSupportedFile(filePath) {
 			continue
 		}
 
@@ -307,10 +318,9 @@ func (r *Resolver) BuildIndex(filePaths []string) error {
 // filePathToModuleName converts a file path to a dotted module name.
 // Example: "pkg/utils.py" -> "pkg.utils"
 func (r *Resolver) filePathToModuleName(filePath string) string {
-	// Remove .py extension
-	filePath = strings.TrimSuffix(filePath, ".py")
-	filePath = strings.TrimSuffix(filePath, ".pyw")
-	filePath = strings.TrimSuffix(filePath, ".pyi")
+	for _, ext := range r.extractor.FileExtensions() {
+		filePath = strings.TrimSuffix(filePath, ext)
+	}
 
 	// Convert path separators to dots
 	filePath = filepath.ToSlash(filePath)
@@ -329,7 +339,7 @@ func (r *Resolver) ResolveCalls(filePaths []string) (*CrossFileCallGraph, error)
 	resolver := NewImportResolver(r.rootDir, r.index)
 
 	for _, filePath := range filePaths {
-		if !strings.HasSuffix(filePath, ".py") {
+		if !r.isSupportedFile(filePath) {
 			continue
 		}
 
@@ -590,15 +600,16 @@ func (r *Resolver) GetCallGraph() *CrossFileCallGraph {
 
 // BuildProjectCallGraph is a convenience function to build a complete project call graph.
 // It scans the project, builds the index, and resolves all calls.
-func BuildProjectCallGraph(rootDir string) (*CrossFileCallGraph, error) {
-	// Find all Python files
-	filePaths, err := findPythonFiles(rootDir)
+// It accepts an Extractor to support any language.
+func BuildProjectCallGraph(rootDir string, ext extractor.Extractor) (*CrossFileCallGraph, error) {
+	// Find all files matching the extractor's supported extensions
+	filePaths, err := findFilesByExtension(rootDir, ext.FileExtensions())
 	if err != nil {
-		return nil, fmt.Errorf("finding Python files: %w", err)
+		return nil, fmt.Errorf("finding files: %w", err)
 	}
 
 	// Create resolver and build call graph
-	resolver := NewResolver(rootDir)
+	resolver := NewResolver(rootDir, ext)
 
 	callGraph, err := resolver.ResolveCalls(filePaths)
 	if err != nil {
@@ -608,8 +619,8 @@ func BuildProjectCallGraph(rootDir string) (*CrossFileCallGraph, error) {
 	return callGraph, nil
 }
 
-// findPythonFiles finds all Python files in the project directory.
-func findPythonFiles(rootDir string) ([]string, error) {
+// findFilesByExtension finds all files in the project directory matching the given extensions.
+func findFilesByExtension(rootDir string, extensions []string) ([]string, error) {
 	var files []string
 
 	err := filepath.Walk(rootDir, func(path string, info os.FileInfo, err error) error {
@@ -632,11 +643,12 @@ func findPythonFiles(rootDir string) ([]string, error) {
 			return nil
 		}
 
-		// Check for Python files
-		if strings.HasSuffix(path, ".py") ||
-			strings.HasSuffix(path, ".pyw") ||
-			strings.HasSuffix(path, ".pyi") {
-			files = append(files, path)
+		// Check for matching extensions
+		for _, ext := range extensions {
+			if strings.HasSuffix(path, ext) {
+				files = append(files, path)
+				break
+			}
 		}
 
 		return nil

@@ -15,6 +15,10 @@ import (
 type Extractor interface {
 	// Extract parses a source file and returns structured information about the module.
 	Extract(file string) (*types.ModuleInfo, error)
+	// Language returns the language identifier for this extractor.
+	Language() Language
+	// FileExtensions returns the file extensions supported by this extractor.
+	FileExtensions() []string
 }
 
 // Language represents a supported programming language.
@@ -23,12 +27,30 @@ type Language string
 const (
 	// Python language support
 	Python Language = "python"
-	// Go language support (future)
+	// Go language support
 	Go Language = "go"
-	// TypeScript language support (future)
+	// TypeScript language support
 	TypeScript Language = "typescript"
-	// JavaScript language support (future)
+	// JavaScript language support
 	JavaScript Language = "javascript"
+	// Java language support
+	Java Language = "java"
+	// Rust language support
+	Rust Language = "rust"
+	// C language support
+	C Language = "c"
+	// CPP language support
+	CPP Language = "cpp"
+	// Ruby language support
+	Ruby Language = "ruby"
+	// PHP language support
+	PHP Language = "php"
+	// Swift language support
+	Swift Language = "swift"
+	// Kotlin language support
+	Kotlin Language = "kotlin"
+	// CSharp language support
+	CSharp Language = "csharp"
 )
 
 // ParserFactory is a function that creates a new tree-sitter parser for a language.
@@ -51,6 +73,18 @@ func NewLanguageRegistry() *LanguageRegistry {
 
 	// Register built-in language mappings
 	registry.RegisterLanguage(Python, []string{".py", ".pyw", ".pyi"}, NewPythonExtractor, NewPythonParser)
+	registry.RegisterLanguage(Go, []string{".go", ".mod", ".sum"}, NewGoExtractor, NewGoParser)
+	registry.RegisterLanguage(TypeScript, []string{".ts", ".tsx", ".mts", ".cts"}, NewTypeScriptExtractor, NewTypeScriptParser)
+	registry.RegisterLanguage(JavaScript, []string{".js", ".jsx", ".mjs", ".cjs"}, NewJavaScriptExtractor, NewJavaScriptParser)
+	registry.RegisterLanguage(Java, []string{".java", ".class", ".jar"}, NewJavaExtractor, NewJavaParser)
+	registry.RegisterLanguage(Rust, []string{".rs", ".rlib"}, NewRustExtractor, NewRustParser)
+	registry.RegisterLanguage(C, []string{".c", ".h"}, NewCExtractor, NewCParser)
+	registry.RegisterLanguage(CPP, []string{".cpp", ".hpp", ".cc", ".hh", ".cxx", ".hxx"}, NewCPPExtractor, NewCPPParser)
+	registry.RegisterLanguage(Ruby, []string{".rb", ".erb", ".gemspec"}, NewRubyExtractor, NewRubyParser)
+	registry.RegisterLanguage(PHP, []string{".php", ".phtml"}, NewPHPExtractor, NewPHPParser)
+	registry.RegisterLanguage(Swift, []string{".swift"}, NewSwiftExtractor, NewSwiftParser)
+	registry.RegisterLanguage(Kotlin, []string{".kt", ".kts"}, NewKotlinExtractor, NewKotlinParser)
+	registry.RegisterLanguage(CSharp, []string{".cs", ".csx"}, NewCSharpExtractor, NewCSharpParser)
 
 	return registry
 }
