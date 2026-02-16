@@ -149,113 +149,241 @@ func (b *Builder) Scan() ([]scanner.FileInfo, error) {
 
 // Extract extracts code units from scanned files
 func (b *Builder) Extract(files []scanner.FileInfo) ([]*CodeUnit, error) {
-	// Filter to Python files only (for now)
-	var pyFiles []string
+	// Group files by language for processing
+	// We support multiple languages now, not just Python
+	languageFiles := make(map[string][]string)
 	for _, f := range files {
-		if f.Language == "python" {
-			pyFiles = append(pyFiles, f.FullPath)
+		lang := f.Language
+		if lang == "" {
+			continue
 		}
+		languageFiles[lang] = append(languageFiles[lang], f.FullPath)
 	}
 
-	if len(pyFiles) == 0 {
-		return nil, nil
+	// Get Python files for call graph resolution (if any)
+	var pyFiles []string
+	if pf, ok := languageFiles["python"]; ok {
+		pyFiles = pf
 	}
 
-	// Build cross-file call graph
-	callGraph, err := b.callGraphResolver.ResolveCalls(pyFiles)
-	if err != nil {
-		return nil, fmt.Errorf("building call graph: %w", err)
-	}
-
-	// Create lookup maps for calls and callers
+	// Create lookup maps for calls and callers (only for Python for now)
 	callsMap := make(map[string][]string)   // func -> functions it calls
 	callersMap := make(map[string][]string) // func -> functions that call it
 
-	// Process edges
-	for _, edge := range callGraph.CrossFileEdges {
-		callerKey := fmt.Sprintf("%s:%s", edge.SourceFile, edge.SourceFunc)
-		calleeKey := fmt.Sprintf("%s:%s", edge.DestFile, edge.DestFunc)
-		callsMap[callerKey] = append(callsMap[callerKey], calleeKey)
-		callersMap[calleeKey] = append(callersMap[callerKey], callerKey)
+	// Build cross-file call graph only for Python files
+	if len(pyFiles) > 0 {
+		callGraph, err := b.callGraphResolver.ResolveCalls(pyFiles)
+		if err != nil {
+			// Don't fail - just log and continue without call graph
+			fmt.Printf("Warning: building call graph: %v\n", err)
+		} else {
+			// Process edges
+			for _, edge := range callGraph.CrossFileEdges {
+				callerKey := fmt.Sprintf("%s:%s", edge.SourceFile, edge.SourceFunc)
+				calleeKey := fmt.Sprintf("%s:%s", edge.DestFile, edge.DestFunc)
+				callsMap[callerKey] = append(callsMap[callerKey], calleeKey)
+				callersMap[calleeKey] = append(callersMap[callerKey], callerKey)
+			}
+
+			// Also process intra-file edges
+			for _, edge := range callGraph.IntraFileEdges {
+				callerKey := fmt.Sprintf("%s:%s", edge.SourceFile, edge.SourceFunc)
+				calleeKey := fmt.Sprintf("%s:%s", edge.DestFile, edge.DestFunc)
+				callsMap[callerKey] = append(callsMap[callerKey], calleeKey)
+				callersMap[calleeKey] = append(callersMap[callerKey], callerKey)
+			}
+		}
 	}
 
-	// Also process intra-file edges
-	for _, edge := range callGraph.IntraFileEdges {
-		callerKey := fmt.Sprintf("%s:%s", edge.SourceFile, edge.SourceFunc)
-		calleeKey := fmt.Sprintf("%s:%s", edge.DestFile, edge.DestFunc)
-		callsMap[callerKey] = append(callsMap[callerKey], calleeKey)
-		callersMap[calleeKey] = append(callersMap[callerKey], callerKey)
-	}
-
-	// Extract code units from each file
+	// Extract code units from each language's files
 	var units []*CodeUnit
 
-	for _, filePath := range pyFiles {
-		ext, err := b.extractor.GetExtractor(filePath)
-		if err != nil {
-			// Skip unsupported files
-			continue
-		}
-
-		moduleInfo, err := ext.Extract(filePath)
-		if err != nil {
-			// Skip files that can't be parsed
-			continue
-		}
-
-		relPath, err := filepath.Rel(b.rootDir, filePath)
-		if err != nil {
-			relPath = filePath
-		}
-
-		// Extract functions
-		for _, fn := range moduleInfo.Functions {
-			unit := &CodeUnit{
-				Name:       fn.Name,
-				Type:       "function",
-				FilePath:   relPath,
-				LineNumber: fn.LineNumber,
-				Signature:  formatSignature(fn),
-				Docstring:  fn.Docstring,
-				Calls:      callsMap[fmt.Sprintf("%s:%s", relPath, fn.Name)],
-				CalledBy:   callersMap[fmt.Sprintf("%s:%s", relPath, fn.Name)],
+	for lang, filePaths := range languageFiles {
+		for _, filePath := range filePaths {
+			ext, err := b.extractor.GetExtractor(filePath)
+			if err != nil {
+				// Skip unsupported files
+				continue
 			}
-			units = append(units, unit)
-		}
 
-		// Extract classes
-		for _, cls := range moduleInfo.Classes {
-			unit := &CodeUnit{
-				Name:       cls.Name,
-				Type:       "class",
-				FilePath:   relPath,
-				LineNumber: cls.LineNumber,
-				Signature:  formatClassSignature(cls),
-				Docstring:  cls.Docstring,
-				Calls:      callsMap[fmt.Sprintf("%s:%s", relPath, cls.Name)],
-				CalledBy:   callersMap[fmt.Sprintf("%s:%s", relPath, cls.Name)],
+			moduleInfo, err := ext.Extract(filePath)
+			if err != nil {
+				// Skip files that can't be parsed
+				continue
 			}
-			units = append(units, unit)
 
-			// Extract methods
-			for _, method := range cls.Methods {
-				methodUnit := &CodeUnit{
-					Name:       fmt.Sprintf("%s.%s", cls.Name, method.Name),
-					Type:       "method",
+			relPath, err := filepath.Rel(b.rootDir, filePath)
+			if err != nil {
+				relPath = filePath
+			}
+
+			// Determine language-specific signature prefix
+			sigPrefix := getSignaturePrefix(lang)
+
+			// Extract functions
+			for _, fn := range moduleInfo.Functions {
+				unit := &CodeUnit{
+					Name:       fn.Name,
+					Type:       "function",
 					FilePath:   relPath,
-					LineNumber: method.LineNumber,
-					Signature:  formatSignature(method),
-					Docstring:  method.Docstring,
-					Calls:      callsMap[fmt.Sprintf("%s:%s", relPath, method.Name)],
-					CalledBy:   callersMap[fmt.Sprintf("%s:%s", relPath, method.Name)],
+					LineNumber: fn.LineNumber,
+					Signature:  formatSignatureForLang(fn, lang, sigPrefix),
+					Docstring:  fn.Docstring,
+					Calls:      callsMap[fmt.Sprintf("%s:%s", relPath, fn.Name)],
+					CalledBy:   callersMap[fmt.Sprintf("%s:%s", relPath, fn.Name)],
 				}
-				units = append(units, methodUnit)
+				units = append(units, unit)
+			}
+
+			// Extract classes
+			for _, cls := range moduleInfo.Classes {
+				unit := &CodeUnit{
+					Name:       cls.Name,
+					Type:       "class",
+					FilePath:   relPath,
+					LineNumber: cls.LineNumber,
+					Signature:  formatClassSignatureForLang(cls, lang),
+					Docstring:  cls.Docstring,
+					Calls:      callsMap[fmt.Sprintf("%s:%s", relPath, cls.Name)],
+					CalledBy:   callersMap[fmt.Sprintf("%s:%s", relPath, cls.Name)],
+				}
+				units = append(units, unit)
+
+				// Extract methods
+				for _, method := range cls.Methods {
+					methodUnit := &CodeUnit{
+						Name:       fmt.Sprintf("%s.%s", cls.Name, method.Name),
+						Type:       "method",
+						FilePath:   relPath,
+						LineNumber: method.LineNumber,
+						Signature:  formatMethodSignatureForLang(method, cls.Name, lang, sigPrefix),
+						Docstring:  method.Docstring,
+						Calls:      callsMap[fmt.Sprintf("%s:%s", relPath, method.Name)],
+						CalledBy:   callersMap[fmt.Sprintf("%s:%s", relPath, method.Name)],
+					}
+					units = append(units, methodUnit)
+				}
+			}
+
+			// Extract interfaces (for Go/TypeScript)
+			for _, iface := range moduleInfo.Interfaces {
+				unit := &CodeUnit{
+					Name:       iface.Name,
+					Type:       "interface",
+					FilePath:   relPath,
+					LineNumber: iface.LineNumber,
+					Signature:  formatInterfaceSignature(iface),
+					Docstring:  iface.Docstring,
+					Calls:      callsMap[fmt.Sprintf("%s:%s", relPath, iface.Name)],
+					CalledBy:   callersMap[fmt.Sprintf("%s:%s", relPath, iface.Name)],
+				}
+				units = append(units, unit)
 			}
 		}
 	}
 
 	b.codeUnits = units
 	return units, nil
+}
+
+// getSignaturePrefix returns the language-specific function keyword
+func getSignaturePrefix(lang string) string {
+	switch lang {
+	case "python":
+		return "def"
+	case "go":
+		return "func"
+	case "typescript", "javascript":
+		return "function"
+	default:
+		return "def"
+	}
+}
+
+// formatSignatureForLang formats a function signature for the given language
+func formatSignatureForLang(fn types.Function, lang string, prefix string) string {
+	params := fn.Params
+	if params == "" {
+		params = "()"
+	}
+	if fn.ReturnType != "" {
+		switch lang {
+		case "python":
+			return fmt.Sprintf("%s %s%s -> %s", prefix, fn.Name, params, fn.ReturnType)
+		case "go":
+			return fmt.Sprintf("%s %s%s %s", prefix, fn.Name, params, fn.ReturnType)
+		case "typescript", "javascript":
+			return fmt.Sprintf("%s %s%s: %s", prefix, fn.Name, params, fn.ReturnType)
+		default:
+			return fmt.Sprintf("%s %s%s -> %s", prefix, fn.Name, params, fn.ReturnType)
+		}
+	}
+	return fmt.Sprintf("%s %s%s", prefix, fn.Name, params)
+}
+
+// formatMethodSignatureForLang formats a method signature for the given language
+func formatMethodSignatureForLang(method types.Method, className string, lang string, prefix string) string {
+	params := method.Params
+	if params == "" {
+		params = "()"
+	}
+	if method.ReturnType != "" {
+		switch lang {
+		case "python":
+			return fmt.Sprintf("def %s.%s%s -> %s", className, method.Name, params, method.ReturnType)
+		case "go":
+			return fmt.Sprintf("func (%s) %s%s %s", className, method.Name, params, method.ReturnType)
+		case "typescript", "javascript":
+			return fmt.Sprintf("%s %s.%s%s: %s", prefix, className, method.Name, params, method.ReturnType)
+		default:
+			return fmt.Sprintf("%s %s.%s%s -> %s", prefix, className, method.Name, params, method.ReturnType)
+		}
+	}
+	switch lang {
+	case "python":
+		return fmt.Sprintf("def %s.%s%s", className, method.Name, params)
+	case "go":
+		return fmt.Sprintf("func (%s) %s%s", className, method.Name, params)
+	case "typescript", "javascript":
+		return fmt.Sprintf("%s %s.%s%s", prefix, className, method.Name, params)
+	default:
+		return fmt.Sprintf("%s %s.%s%s", prefix, className, method.Name, params)
+	}
+}
+
+// formatClassSignatureForLang formats a class signature for the given language
+func formatClassSignatureForLang(cls types.Class, lang string) string {
+	switch lang {
+	case "python":
+		if len(cls.Bases) > 0 {
+			return fmt.Sprintf("class %s(%s)", cls.Name, strings.Join(cls.Bases, ", "))
+		}
+		return fmt.Sprintf("class %s", cls.Name)
+	case "go":
+		return fmt.Sprintf("type %s struct", cls.Name)
+	case "typescript", "javascript":
+		if len(cls.Bases) > 0 {
+			return fmt.Sprintf("class %s extends %s", cls.Name, cls.Bases[0])
+		}
+		return fmt.Sprintf("class %s", cls.Name)
+	default:
+		if len(cls.Bases) > 0 {
+			return fmt.Sprintf("class %s(%s)", cls.Name, strings.Join(cls.Bases, ", "))
+		}
+		return fmt.Sprintf("class %s", cls.Name)
+	}
+}
+
+// formatInterfaceSignature formats an interface signature
+func formatInterfaceSignature(iface types.Interface) string {
+	if len(iface.Methods) > 0 {
+		methodNames := make([]string, len(iface.Methods))
+		for i, m := range iface.Methods {
+			methodNames[i] = m.Name
+		}
+		return fmt.Sprintf("interface %s { %s }", iface.Name, strings.Join(methodNames, ", "))
+	}
+	return fmt.Sprintf("interface %s", iface.Name)
 }
 
 // formatSignature formats a function signature
