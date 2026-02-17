@@ -35,6 +35,7 @@ type CFGBlock struct {
 	EndLine      int       `json:"end_line"`     // Ending line number in source
 	Statements   []string  `json:"statements"`   // List of statements in this block
 	Predecessors []string  `json:"predecessors"` // IDs of blocks that can precede this block
+	FuncCalls    []string  `json:"func_calls,omitempty"`
 }
 
 // CFGEdge represents a directed edge between two CFG blocks.
@@ -53,4 +54,5 @@ type CFGInfo struct {
 	EntryBlockID         string              `json:"entry_block_id"`        // ID of the entry block
 	ExitBlockIDs         []string            `json:"exit_block_ids"`        // IDs of exit blocks
 	CyclomaticComplexity int                 `json:"cyclomatic_complexity"` // Cyclomatic complexity of the function
+	NestedCFGs           map[string]CFGInfo  `json:"nested_cfgs,omitempty"`
 }

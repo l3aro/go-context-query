@@ -41,12 +41,13 @@ func ExtractCFG(filePath string, functionName string) (*CFGInfo, error) {
 
 // pythonCFGExtractor handles CFG extraction for Python source code.
 type pythonCFGExtractor struct {
-	content  []byte
-	tree     *sitter.Tree
-	blocks   map[string]*CFGBlock
-	edges    []CFGEdge
-	blockID  int
-	funcName string
+	content    []byte
+	tree       *sitter.Tree
+	blocks     map[string]*CFGBlock
+	edges      []CFGEdge
+	blockID    int
+	funcName   string
+	nestedCFGs map[string]CFGInfo
 }
 
 // newPythonCFGExtractor creates a new Python CFG extractor.
@@ -56,12 +57,13 @@ func newPythonCFGExtractor(content []byte, funcName string) *pythonCFGExtractor 
 	tree := parser.Parse(nil, content)
 
 	return &pythonCFGExtractor{
-		content:  content,
-		tree:     tree,
-		blocks:   make(map[string]*CFGBlock),
-		edges:    make([]CFGEdge, 0),
-		blockID:  0,
-		funcName: funcName,
+		content:    content,
+		tree:       tree,
+		blocks:     make(map[string]*CFGBlock),
+		edges:      make([]CFGEdge, 0),
+		blockID:    0,
+		funcName:   funcName,
+		nestedCFGs: make(map[string]CFGInfo),
 	}
 }
 
@@ -114,6 +116,7 @@ func extractPythonCFG(filePath string, functionName string) (*CFGInfo, error) {
 		EntryBlockID:         entryBlock.ID,
 		ExitBlockIDs:         []string{exitBlock.ID},
 		CyclomaticComplexity: complexity,
+		NestedCFGs:           extractor.nestedCFGs,
 	}, nil
 }
 
@@ -189,11 +192,11 @@ func (e *pythonCFGExtractor) processBlock(blockNode *sitter.Node, currentBlock *
 
 		switch child.Type() {
 		case "expression_statement":
-			// Add statement to current block
 			stmt := e.nodeText(child)
 			if stmt != "" && *currentBlock != nil {
 				(*currentBlock).Statements = append((*currentBlock).Statements, stmt)
 				(*currentBlock).EndLine = int(child.EndPoint().Row) + 1
+				e.extractCallsFromNode(child, *currentBlock)
 			}
 
 		case "if_statement":
@@ -918,4 +921,74 @@ func (e *pythonCFGExtractor) nodeText(node *sitter.Node) string {
 		return ""
 	}
 	return string(e.content[start:end])
+}
+
+func (e *pythonCFGExtractor) extractCallsFromNode(node *sitter.Node, block *CFGBlock) {
+	if node == nil || block == nil {
+		return
+	}
+	e.walkForCalls(node, block)
+}
+
+func (e *pythonCFGExtractor) walkForCalls(node *sitter.Node, block *CFGBlock) {
+	if node == nil {
+		return
+	}
+	if node.Type() == "call" {
+		funcName := e.extractCallName(node)
+		if funcName != "" {
+			block.FuncCalls = append(block.FuncCalls, funcName)
+		}
+		return
+	}
+	for i := 0; i < int(node.ChildCount()); i++ {
+		child := node.Child(i)
+		if child != nil {
+			e.walkForCalls(child, block)
+		}
+	}
+}
+
+func (e *pythonCFGExtractor) extractCallName(node *sitter.Node) string {
+	if node == nil || node.Type() != "call" {
+		return ""
+	}
+	if node.ChildCount() > 0 {
+		firstChild := node.Child(0)
+		if firstChild.Type() == "identifier" {
+			return e.nodeText(firstChild)
+		}
+		if firstChild.Type() == "attribute" {
+			return e.extractAttributeName(firstChild)
+		}
+	}
+	return ""
+}
+
+func (e *pythonCFGExtractor) extractAttributeName(node *sitter.Node) string {
+	if node == nil || node.Type() != "attribute" {
+		return ""
+	}
+	var parts []string
+	current := node
+	for current != nil {
+		if current.Type() == "identifier" {
+			parts = append([]string{e.nodeText(current)}, parts...)
+			break
+		}
+		if current.Type() == "attribute" {
+			if child := current.Child(1); child != nil && child.Type() == "identifier" {
+				parts = append([]string{e.nodeText(child)}, parts...)
+			}
+			if child := current.Child(0); child != nil {
+				current = child
+				continue
+			}
+		}
+		break
+	}
+	if len(parts) > 0 {
+		return parts[len(parts)-1]
+	}
+	return ""
 }
