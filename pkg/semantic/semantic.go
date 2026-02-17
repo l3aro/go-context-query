@@ -19,6 +19,8 @@ import (
 	"github.com/l3aro/go-context-query/pkg/extractor"
 	"github.com/l3aro/go-context-query/pkg/index"
 	"github.com/l3aro/go-context-query/pkg/types"
+
+	"github.com/l3aro/go-context-query/pkg/cache"
 )
 
 // CodeUnit represents a single unit of code ready for embedding.
@@ -44,6 +46,8 @@ type CodeUnit struct {
 	CFGSummary string `json:"cfg_summary,omitempty"`
 	// DFGSummary is an optional data flow graph summary (variables, edges)
 	DFGSummary string `json:"dfg_summary,omitempty"`
+	// Dependencies is a list of significant imported modules/packages
+	Dependencies []string `json:"dependencies,omitempty"`
 }
 
 // EmbeddingText builds rich text for embedding from a CodeUnit.
@@ -83,6 +87,12 @@ func EmbeddingText(unit *CodeUnit) string {
 			callersStr = callersStr[:200] + "..."
 		}
 		parts = append(parts, fmt.Sprintf("Called by: %s", callersStr))
+	}
+
+	// L5: Dependencies (external imports)
+	if len(unit.Dependencies) > 0 {
+		depsStr := strings.Join(unit.Dependencies, ", ")
+		parts = append(parts, fmt.Sprintf("Dependencies: %s", depsStr))
 	}
 
 	// L3: Control flow summary (optional)
@@ -131,6 +141,8 @@ type Builder struct {
 	vectorIndex *index.VectorIndex
 	// codeUnits stores the extracted code units
 	codeUnits []*CodeUnit
+	// embeddingCache caches embeddings for reuse
+	embeddingCache *cache.EmbeddingStore
 }
 
 // NewBuilder creates a new semantic index builder
@@ -146,7 +158,26 @@ func NewBuilder(rootDir string, embedProvider embed.Provider) (*Builder, error) 
 		return nil, fmt.Errorf("creating cache directory: %w", err)
 	}
 
-	return &Builder{
+	// Create embedding cache directory
+	embedCacheDir := filepath.Join(absRoot, ".gcq", "cache", "embeddings")
+	if err := os.MkdirAll(embedCacheDir, 0755); err != nil {
+		return nil, fmt.Errorf("creating embedding cache directory: %w", err)
+	}
+
+	// Initialize embedding cache with persistence
+	embedCachePath := filepath.Join(embedCacheDir, "embeddings.msgpack")
+	embedStore := cache.NewEmbeddingStore(cache.EmbeddingCacheOptions{
+		Model:          embedProvider.Config().Model,
+		MaxEmbeddings:  10000,
+		MaxMemoryBytes: 100 * 1024 * 1024,
+	}, embedCachePath)
+
+	// Load existing cache from disk
+	if err := embedStore.Load(); err != nil {
+		fmt.Printf("Warning: failed to load embedding cache: %v\n", err)
+	}
+
+	builder := &Builder{
 		rootDir:           absRoot,
 		cacheDir:          cacheDir,
 		scanner:           scanner.New(scanner.DefaultOptions()),
@@ -155,7 +186,10 @@ func NewBuilder(rootDir string, embedProvider embed.Provider) (*Builder, error) 
 		embedProvider:     embedProvider,
 		vectorIndex:       nil,
 		codeUnits:         nil,
-	}, nil
+		embeddingCache:    embedStore,
+	}
+
+	return builder, nil
 }
 
 // Scan scans the project for supported files
@@ -236,27 +270,94 @@ func (b *Builder) Extract(files []scanner.FileInfo) ([]*CodeUnit, error) {
 			// Determine language-specific signature prefix
 			sigPrefix := getSignaturePrefix(lang)
 
+			// Extract significant dependencies (external imports only)
+			deps := extractSignificantDeps(moduleInfo)
+
 			// Extract functions
 			for _, fn := range moduleInfo.Functions {
 				unit := &CodeUnit{
-					Name:       fn.Name,
-					Type:       "function",
-					FilePath:   relPath,
-					LineNumber: fn.LineNumber,
-					Signature:  formatSignatureForLang(fn, lang, sigPrefix),
-					Docstring:  fn.Docstring,
-					Calls:      callsMap[fmt.Sprintf("%s:%s", relPath, fn.Name)],
-					CalledBy:   callersMap[fmt.Sprintf("%s:%s", relPath, fn.Name)],
+					Name:         fn.Name,
+					Type:         "function",
+					FilePath:     relPath,
+					LineNumber:   fn.LineNumber,
+					Signature:    formatSignatureForLang(fn, lang, sigPrefix),
+					Docstring:    fn.Docstring,
+					Calls:        callsMap[fmt.Sprintf("%s:%s", relPath, fn.Name)],
+					CalledBy:     callersMap[fmt.Sprintf("%s:%s", relPath, fn.Name)],
+					Dependencies: deps,
 				}
 
 				// Extract CFG summary (optional - graceful degradation)
 				if cfgInfo, err := cfg.ExtractCFG(filePath, fn.Name); err == nil {
-					unit.CFGSummary = fmt.Sprintf("complexity:%d, blocks:%d", cfgInfo.CyclomaticComplexity, len(cfgInfo.Blocks))
+					// Compute additional metrics from CFG
+					branches := 0
+					loops := 0
+					depth := 0
+					visited := make(map[string]bool)
+					var computeDepth func(string, int)
+					computeDepth = func(blockID string, currentDepth int) {
+						if visited[blockID] {
+							return
+						}
+						visited[blockID] = true
+						if currentDepth > depth {
+							depth = currentDepth
+						}
+						block, ok := cfgInfo.Blocks[blockID]
+						if !ok {
+							return
+						}
+						for _, edge := range cfgInfo.Edges {
+							if edge.SourceID == block.ID {
+								computeDepth(edge.TargetID, currentDepth+1)
+							}
+						}
+					}
+					if cfgInfo.EntryBlockID != "" {
+						computeDepth(cfgInfo.EntryBlockID, 0)
+					}
+					for _, edge := range cfgInfo.Edges {
+						if edge.EdgeType == cfg.EdgeTypeTrue || edge.EdgeType == cfg.EdgeTypeFalse {
+							branches++
+						}
+						if edge.EdgeType == cfg.EdgeTypeBackEdge {
+							loops++
+						}
+					}
+					unit.CFGSummary = fmt.Sprintf("complexity:%d, blocks:%d, branches:%d, loops:%d, depth:%d",
+						cfgInfo.CyclomaticComplexity, len(cfgInfo.Blocks), branches, loops, depth)
 				}
 
 				// Extract DFG summary (optional - graceful degradation)
 				if dfgInfo, err := dfg.ExtractDFG(filePath, fn.Name); err == nil {
-					unit.DFGSummary = fmt.Sprintf("vars:%d, edges:%d", len(dfgInfo.VarRefs), len(dfgInfo.DataflowEdges))
+					// Count param references (variables used from function parameters)
+					paramCount := 0
+					if fn.Params != "" {
+						// Count parameters by splitting on comma
+						paramCount = 1
+						for _, c := range fn.Params {
+							if c == ',' {
+								paramCount++
+							}
+						}
+					}
+					// Count definitions (definition + update)
+					definitions := 0
+					uses := 0
+					for _, v := range dfgInfo.VarRefs {
+						if v.RefType == dfg.RefTypeDefinition || v.RefType == dfg.RefTypeUpdate {
+							definitions++
+						} else if v.RefType == dfg.RefTypeUse {
+							uses++
+						}
+					}
+					// Local variables = definitions - params (at minimum 0)
+					locals := definitions - paramCount
+					if locals < 0 {
+						locals = 0
+					}
+					unit.DFGSummary = fmt.Sprintf("params:%d, locals:%d, definitions:%d, uses:%d, edges:%d",
+						paramCount, locals, definitions, uses, len(dfgInfo.DataflowEdges))
 				}
 
 				units = append(units, unit)
@@ -265,28 +366,30 @@ func (b *Builder) Extract(files []scanner.FileInfo) ([]*CodeUnit, error) {
 			// Extract classes
 			for _, cls := range moduleInfo.Classes {
 				unit := &CodeUnit{
-					Name:       cls.Name,
-					Type:       "class",
-					FilePath:   relPath,
-					LineNumber: cls.LineNumber,
-					Signature:  formatClassSignatureForLang(cls, lang),
-					Docstring:  cls.Docstring,
-					Calls:      callsMap[fmt.Sprintf("%s:%s", relPath, cls.Name)],
-					CalledBy:   callersMap[fmt.Sprintf("%s:%s", relPath, cls.Name)],
+					Name:         cls.Name,
+					Type:         "class",
+					FilePath:     relPath,
+					LineNumber:   cls.LineNumber,
+					Signature:    formatClassSignatureForLang(cls, lang),
+					Docstring:    cls.Docstring,
+					Calls:        callsMap[fmt.Sprintf("%s:%s", relPath, cls.Name)],
+					CalledBy:     callersMap[fmt.Sprintf("%s:%s", relPath, cls.Name)],
+					Dependencies: deps,
 				}
 				units = append(units, unit)
 
 				// Extract methods
 				for _, method := range cls.Methods {
 					methodUnit := &CodeUnit{
-						Name:       fmt.Sprintf("%s.%s", cls.Name, method.Name),
-						Type:       "method",
-						FilePath:   relPath,
-						LineNumber: method.LineNumber,
-						Signature:  formatMethodSignatureForLang(method, cls.Name, lang, sigPrefix),
-						Docstring:  method.Docstring,
-						Calls:      callsMap[fmt.Sprintf("%s:%s", relPath, method.Name)],
-						CalledBy:   callersMap[fmt.Sprintf("%s:%s", relPath, method.Name)],
+						Name:         fmt.Sprintf("%s.%s", cls.Name, method.Name),
+						Type:         "method",
+						FilePath:     relPath,
+						LineNumber:   method.LineNumber,
+						Signature:    formatMethodSignatureForLang(method, cls.Name, lang, sigPrefix),
+						Docstring:    method.Docstring,
+						Calls:        callsMap[fmt.Sprintf("%s:%s", relPath, method.Name)],
+						CalledBy:     callersMap[fmt.Sprintf("%s:%s", relPath, method.Name)],
+						Dependencies: deps,
 					}
 					units = append(units, methodUnit)
 				}
@@ -295,14 +398,15 @@ func (b *Builder) Extract(files []scanner.FileInfo) ([]*CodeUnit, error) {
 			// Extract interfaces (for Go/TypeScript)
 			for _, iface := range moduleInfo.Interfaces {
 				unit := &CodeUnit{
-					Name:       iface.Name,
-					Type:       "interface",
-					FilePath:   relPath,
-					LineNumber: iface.LineNumber,
-					Signature:  formatInterfaceSignature(iface),
-					Docstring:  iface.Docstring,
-					Calls:      callsMap[fmt.Sprintf("%s:%s", relPath, iface.Name)],
-					CalledBy:   callersMap[fmt.Sprintf("%s:%s", relPath, iface.Name)],
+					Name:         iface.Name,
+					Type:         "interface",
+					FilePath:     relPath,
+					LineNumber:   iface.LineNumber,
+					Signature:    formatInterfaceSignature(iface),
+					Docstring:    iface.Docstring,
+					Calls:        callsMap[fmt.Sprintf("%s:%s", relPath, iface.Name)],
+					CalledBy:     callersMap[fmt.Sprintf("%s:%s", relPath, iface.Name)],
+					Dependencies: deps,
 				}
 				units = append(units, unit)
 			}
@@ -325,6 +429,63 @@ func getSignaturePrefix(lang string) string {
 	default:
 		return "def"
 	}
+}
+
+// commonStdlib is a set of common standard library modules to exclude from dependencies
+var commonStdlib = map[string]bool{
+	// Python stdlib
+	"os": true, "sys": true, "json": true, "re": true, "time": true,
+	"datetime": true, "collections": true, "functools": true, "itertools": true,
+	"math": true, "random": true, "logging": true, "typing": true,
+	"pathlib": true, "argparse": true, "subprocess": true, "threading": true,
+	"multiprocessing": true, "asyncio": true, "contextlib": true,
+	// Go stdlib
+	"fmt": true, "errors": true, "strconv": true, "strings": true,
+	"bytes": true, "bufio": true, "io": true, "path": true,
+	"filepath": true, "sort": true, "container": true, "crypto": true,
+	"hash": true, "unicode": true, "encoding": true,
+}
+
+// extractSignificantDeps extracts significant (external) dependencies from module imports
+// It filters out relative imports and common stdlib modules
+func extractSignificantDeps(moduleInfo *types.ModuleInfo) []string {
+	if moduleInfo == nil || len(moduleInfo.Imports) == 0 {
+		return nil
+	}
+
+	deps := make([]string, 0)
+	seen := make(map[string]bool)
+
+	for _, imp := range moduleInfo.Imports {
+		// Skip relative imports
+		if strings.HasPrefix(imp.Module, ".") {
+			continue
+		}
+
+		// Skip stdlib modules - only keep external dependencies
+		if commonStdlib[imp.Module] {
+			continue
+		}
+
+		// Add the module if not already seen
+		if !seen[imp.Module] {
+			seen[imp.Module] = true
+			if imp.IsFrom {
+				// "from foo import bar" -> "foo"
+				deps = append(deps, imp.Module)
+			} else {
+				// "import foo" -> "foo"
+				deps = append(deps, imp.Module)
+			}
+		}
+	}
+
+	// Limit to a reasonable number of dependencies
+	if len(deps) > 5 {
+		deps = deps[:5]
+	}
+
+	return deps
 }
 
 // formatSignatureForLang formats a function signature for the given language
@@ -445,10 +606,39 @@ func (b *Builder) Embed(units []*CodeUnit) ([][]float32, error) {
 		texts[i] = EmbeddingText(unit)
 	}
 
-	// Generate embeddings
-	embeddings, err := b.embedProvider.Embed(texts)
-	if err != nil {
-		return nil, fmt.Errorf("generating embeddings: %w", err)
+	// Check cache for each text and collect missing embeddings
+	embeddings := make([][]float32, len(units))
+	missingIndices := make([]int, 0)
+	missingTexts := make([]string, 0)
+	missingHashes := make([]string, 0)
+
+	for i, text := range texts {
+		hash := cache.HashString(text)
+		if cached, found := b.embeddingCache.Get(hash); found {
+			embeddings[i] = cached
+		} else {
+			missingIndices = append(missingIndices, i)
+			missingTexts = append(missingTexts, text)
+			missingHashes = append(missingHashes, hash)
+		}
+	}
+
+	// Generate embeddings for missing texts
+	if len(missingTexts) > 0 {
+		newEmbeddings, err := b.embedProvider.Embed(missingTexts)
+		if err != nil {
+			return nil, fmt.Errorf("generating embeddings: %w", err)
+		}
+
+		// Store new embeddings in cache
+		for j, hash := range missingHashes {
+			b.embeddingCache.Set(hash, newEmbeddings[j])
+		}
+
+		// Fill in the missing slots
+		for j, idx := range missingIndices {
+			embeddings[idx] = newEmbeddings[j]
+		}
 	}
 
 	return embeddings, nil
@@ -545,6 +735,13 @@ func (b *Builder) Save() error {
 
 	if err := saveMetadata(metadataPath, metadata); err != nil {
 		return fmt.Errorf("saving metadata: %w", err)
+	}
+
+	// Save embedding cache
+	if b.embeddingCache != nil {
+		if err := b.embeddingCache.Save(); err != nil {
+			return fmt.Errorf("saving embedding cache: %w", err)
+		}
 	}
 
 	return nil
