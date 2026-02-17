@@ -8,6 +8,7 @@ import (
 
 	"github.com/l3aro/go-context-query/internal/config"
 	"github.com/l3aro/go-context-query/internal/daemon"
+	"github.com/l3aro/go-context-query/pkg/dirty"
 	"github.com/l3aro/go-context-query/pkg/embed"
 	"github.com/l3aro/go-context-query/pkg/semantic"
 	"github.com/spf13/cobra"
@@ -75,22 +76,44 @@ and builds a searchable semantic index.`,
 			}
 		}
 
-		// Check if daemon is available and use it
-		if daemon.IsRunning() {
-			return runWarmViaDaemon(path, cmd, langFlag)
+		// Get force flag
+		forceFlag, _ := cmd.Flags().GetBool("force")
+
+		// Load dirty tracker
+		tracker := dirty.New(dirty.WithCacheDir(filepath.Join(".gcq", "cache")))
+		if err := tracker.Load(); err != nil {
+			return fmt.Errorf("loading dirty tracker: %w", err)
 		}
 
-		return runWarmLocally(path, cmd, langFlag)
+		dirtyCount := tracker.Count()
+
+		// Display dirty count if not forcing full rebuild
+		if !forceFlag && dirtyCount > 0 {
+			jsonOutput, _ := cmd.Flags().GetBool("json")
+			if jsonOutput {
+				fmt.Printf("{\"dirty_files\": %d, \"force\": false}\n", dirtyCount)
+			} else {
+				fmt.Printf("Dirty files detected: %d\n", dirtyCount)
+				fmt.Println("Use --force to rebuild all files")
+			}
+		}
+
+		// Check if daemon is available and use it
+		if daemon.IsRunning() {
+			return runWarmViaDaemon(path, cmd, langFlag, forceFlag, tracker)
+		}
+
+		return runWarmLocally(path, cmd, langFlag, forceFlag, tracker)
 	},
 }
 
-func runWarmViaDaemon(path string, cmd *cobra.Command, langFlag string) error {
+func runWarmViaDaemon(path string, cmd *cobra.Command, langFlag string, forceFlag bool, tracker *dirty.Tracker) error {
 	// TODO: Implement daemon-based semantic indexing
 	// For now, fall back to local
-	return runWarmLocally(path, cmd, langFlag)
+	return runWarmLocally(path, cmd, langFlag, forceFlag, tracker)
 }
 
-func runWarmLocally(path string, cmd *cobra.Command, langFlag string) error {
+func runWarmLocally(path string, cmd *cobra.Command, langFlag string, forceFlag bool, tracker *dirty.Tracker) error {
 	// Get absolute path
 	absPath, err := filepath.Abs(path)
 	if err != nil {
@@ -220,6 +243,13 @@ func runWarmLocally(path string, cmd *cobra.Command, langFlag string) error {
 	}
 
 	printWarmOutput(output, cmd)
+
+	// Clear dirty flags after successful warm
+	tracker.ClearDirty(nil)
+	if err := tracker.Save(); err != nil {
+		return fmt.Errorf("saving dirty tracker: %w", err)
+	}
+
 	return nil
 }
 
@@ -262,4 +292,5 @@ func init() {
 	warmCmd.Flags().StringP("provider", "p", "", "Embedding provider (ollama or huggingface)")
 	warmCmd.Flags().StringP("model", "m", "", "Embedding model name")
 	warmCmd.Flags().StringP("language", "l", "", "Language to index (auto-detects all by default). Supported: python, go, typescript, javascript, java, rust, c, cpp, ruby, php, swift, kotlin, csharp")
+	warmCmd.Flags().BoolP("force", "f", false, "Force full rebuild, ignoring dirty tracking")
 }

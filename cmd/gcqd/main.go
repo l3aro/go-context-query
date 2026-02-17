@@ -38,16 +38,17 @@ func isWindows() bool {
 }
 
 type Daemon struct {
-	config    *config.Config
-	index     *index.VectorIndex
-	searcher  *search.Searcher
-	embedder  embed.Provider
-	scanner   *scanner.Scanner
-	callGraph *callgraph.Builder
-	mu        sync.RWMutex
-	ctx       context.Context
-	cancel    context.CancelFunc
-	indexPath string
+	config       *config.Config
+	index        *index.VectorIndex
+	searcher     *search.Searcher
+	textSearcher *search.TextSearcher
+	embedder     embed.Provider
+	scanner      *scanner.Scanner
+	callGraph    *callgraph.Builder
+	mu           sync.RWMutex
+	ctx          context.Context
+	cancel       context.CancelFunc
+	indexPath    string
 }
 
 func NewDaemon(cfg *config.Config) (*Daemon, error) {
@@ -75,6 +76,10 @@ func NewDaemon(cfg *config.Config) (*Daemon, error) {
 	}
 
 	d.searcher = search.NewSearcher(d.embedder, d.index)
+	d.textSearcher = search.NewTextSearcher(search.TextSearchOptions{
+		ContextLines: 2,
+		MaxResults:   100,
+	})
 	d.scanner = scanner.New(scanner.DefaultOptions())
 	d.callGraph = callgraph.NewBuilder()
 
@@ -300,6 +305,8 @@ type SearchParams struct {
 	Query     string  `json:"query"`
 	Limit     int     `json:"limit,omitempty"`
 	Threshold float64 `json:"threshold,omitempty"`
+	Mode      string  `json:"mode,omitempty"` // "semantic" (default) or "text"
+	Root      string  `json:"root,omitempty"` // root directory for text search
 }
 
 func (d *Daemon) handleSearch(cmd Command) Response {
@@ -316,6 +323,16 @@ func (d *Daemon) handleSearch(cmd Command) Response {
 		params.Limit = 10
 	}
 
+	// Default to semantic mode if not specified
+	if params.Mode == "" {
+		params.Mode = "semantic"
+	}
+
+	if params.Mode == "text" {
+		return d.handleTextSearch(cmd, params)
+	}
+
+	// Semantic search (existing behavior)
 	results, err := d.searcher.Search(params.Query, params.Limit)
 	if err != nil {
 		return Response{ID: cmd.ID, Error: fmt.Sprintf("search error: %v", err)}
@@ -332,6 +349,44 @@ func (d *Daemon) handleSearch(cmd Command) Response {
 	}
 
 	resultJSON, err := json.Marshal(results)
+	if err != nil {
+		return Response{ID: cmd.ID, Error: fmt.Sprintf("marshal error: %v", err)}
+	}
+
+	return Response{
+		ID:     cmd.ID,
+		Type:   "search",
+		Result: resultJSON,
+	}
+}
+
+func (d *Daemon) handleTextSearch(cmd Command, params SearchParams) Response {
+	if params.Root == "" {
+		return Response{ID: cmd.ID, Error: "root is required for text search"}
+	}
+
+	ctx, cancel := context.WithTimeout(d.ctx, 30*time.Second)
+	defer cancel()
+
+	matches, err := d.textSearcher.Search(ctx, params.Query, params.Root)
+	if err != nil {
+		return Response{ID: cmd.ID, Error: fmt.Sprintf("text search error: %v", err)}
+	}
+
+	// Apply limit
+	if params.Limit > 0 && len(matches) > params.Limit {
+		matches = matches[:params.Limit]
+	}
+
+	result := map[string]interface{}{
+		"mode":    "text",
+		"query":   params.Query,
+		"root":    params.Root,
+		"matches": matches,
+		"count":   len(matches),
+	}
+
+	resultJSON, err := json.Marshal(result)
 	if err != nil {
 		return Response{ID: cmd.ID, Error: fmt.Sprintf("marshal error: %v", err)}
 	}
