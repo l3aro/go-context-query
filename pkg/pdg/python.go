@@ -40,7 +40,7 @@ func ExtractPDG(filePath string, functionName string) (*PDGInfo, error) {
 }
 
 func extractPythonPDG(filePath string, functionName string) (*PDGInfo, error) {
-	content, err := os.ReadFile(filePath)
+	_, err := os.ReadFile(filePath)
 	if err != nil {
 		return nil, fmt.Errorf("reading file %s: %w", filePath, err)
 	}
@@ -57,14 +57,12 @@ func extractPythonPDG(filePath string, functionName string) (*PDGInfo, error) {
 
 	builder := NewPDGBuilder(cfgInfo, dfgInfo)
 	pdgInfo := builder.Build()
-
-	_ = content
 
 	return pdgInfo, nil
 }
 
 func extractGoPDG(filePath string, functionName string) (*PDGInfo, error) {
-	content, err := os.ReadFile(filePath)
+	_, err := os.ReadFile(filePath)
 	if err != nil {
 		return nil, fmt.Errorf("reading file %s: %w", filePath, err)
 	}
@@ -81,8 +79,6 @@ func extractGoPDG(filePath string, functionName string) (*PDGInfo, error) {
 
 	builder := NewPDGBuilder(cfgInfo, dfgInfo)
 	pdgInfo := builder.Build()
-
-	_ = content
 
 	return pdgInfo, nil
 }

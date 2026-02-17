@@ -50,6 +50,7 @@ type pythonDefUseVisitor struct {
 	refs       []VarRef
 	variables  map[string][]VarRef
 	scopeStack scopeStack
+	imports    []string
 }
 
 func newPythonDefUseVisitor(content []byte, funcName string) *pythonDefUseVisitor {
@@ -58,7 +59,8 @@ func newPythonDefUseVisitor(content []byte, funcName string) *pythonDefUseVisito
 		funcName:   funcName,
 		refs:       make([]VarRef, 0),
 		variables:  make(map[string][]VarRef),
-		scopeStack: scopeStack{make(map[string]bool)}, // Initialize with global scope
+		scopeStack: scopeStack{make(map[string]bool)},
+		imports:    make([]string, 0),
 	}
 }
 
@@ -70,7 +72,8 @@ func extractPythonDFG(filePath string, functionName string) (*DFGInfo, error) {
 
 	cfgInfo, err := cfg.ExtractCFG(filePath, functionName)
 	if err != nil {
-		return nil, fmt.Errorf("extracting CFG: %w", err)
+		// Fall back to simple analysis if CFG extraction fails
+		return extractPythonDFGSimple(content, functionName)
 	}
 
 	parser := sitter.NewParser()
@@ -85,6 +88,7 @@ func extractPythonDFG(filePath string, functionName string) (*DFGInfo, error) {
 	}
 
 	visitor := newPythonDefUseVisitor(content, functionName)
+	visitor.extractImports(root)
 	visitor.extractReferences(funcNode)
 
 	analyzer := NewReachingDefsAnalyzer()
@@ -95,6 +99,36 @@ func extractPythonDFG(filePath string, functionName string) (*DFGInfo, error) {
 		VarRefs:       visitor.refs,
 		DataflowEdges: edges,
 		Variables:     visitor.variables,
+		Imports:       visitor.imports,
+	}, nil
+}
+
+// extractPythonDFGSimple provides a fallback DFG analysis without CFG.
+func extractPythonDFGSimple(content []byte, functionName string) (*DFGInfo, error) {
+	parser := sitter.NewParser()
+	parser.SetLanguage(python.GetLanguage())
+	tree := parser.Parse(nil, content)
+	defer tree.Close()
+
+	root := tree.RootNode()
+	funcNode := findPythonFunction(root, functionName, content)
+	if funcNode == nil {
+		return nil, fmt.Errorf("function %q not found", functionName)
+	}
+
+	visitor := newPythonDefUseVisitor(content, functionName)
+	visitor.extractImports(root)
+	visitor.extractReferences(funcNode)
+
+	analyzer := NewSimpleFallbackAnalyzer()
+	edges := analyzer.ComputeDefUseChains(visitor.refs)
+
+	return &DFGInfo{
+		FunctionName:  functionName,
+		VarRefs:       visitor.refs,
+		DataflowEdges: edges,
+		Variables:     visitor.variables,
+		Imports:       visitor.imports,
 	}, nil
 }
 
@@ -128,6 +162,81 @@ func findPythonFunction(node *sitter.Node, funcName string, content []byte) *sit
 	}
 
 	return nil
+}
+
+func (v *pythonDefUseVisitor) extractImports(root *sitter.Node) {
+	if root == nil {
+		return
+	}
+
+	for i := 0; i < int(root.ChildCount()); i++ {
+		child := root.Child(i)
+		if child == nil {
+			continue
+		}
+
+		switch child.Type() {
+		case "import_statement":
+			v.processImportStatement(child)
+		case "import_from_statement":
+			v.processImportFromStatement(child)
+		}
+	}
+}
+
+func (v *pythonDefUseVisitor) processImportStatement(node *sitter.Node) {
+	if node == nil {
+		return
+	}
+
+	for i := 0; i < int(node.ChildCount()); i++ {
+		child := node.Child(i)
+		if child == nil {
+			continue
+		}
+
+		switch child.Type() {
+		case "dotted_name":
+			v.imports = append(v.imports, nodeText(child, v.content))
+		case "aliased_import":
+			alias := nodeText(child, v.content)
+			if alias != "" {
+				v.imports = append(v.imports, alias)
+			}
+		}
+	}
+}
+
+func (v *pythonDefUseVisitor) processImportFromStatement(node *sitter.Node) {
+	if node == nil {
+		return
+	}
+
+	var module string
+	for i := 0; i < int(node.ChildCount()); i++ {
+		child := node.Child(i)
+		if child == nil {
+			continue
+		}
+
+		switch child.Type() {
+		case "dotted_name":
+			module = nodeText(child, v.content)
+		case "relative_import":
+			module = nodeText(child, v.content)
+		case "wildcard_import":
+			v.imports = append(v.imports, module+".*")
+		default:
+			name := nodeText(child, v.content)
+			if name != "" && name != "from" && name != "import" && name != "," {
+				if module != "" {
+					v.imports = append(v.imports, module+"."+name)
+				} else {
+					v.imports = append(v.imports, name)
+				}
+			}
+		}
+	}
 }
 
 func (v *pythonDefUseVisitor) extractReferences(funcNode *sitter.Node) {
@@ -266,6 +375,9 @@ func (v *pythonDefUseVisitor) processNode(node *sitter.Node) {
 		v.processComprehension(node)
 	case "dictionary_comprehension":
 		v.processDictComprehension(node)
+	case "attribute":
+		// Handle attribute access (e.g., self.x)
+		v.processAttributeAccess(node)
 	case "identifier":
 		// When we encounter an identifier not in an assignment context, it's a use
 		v.extractUses(node)
@@ -697,6 +809,36 @@ func (v *pythonDefUseVisitor) walkChildren(node *sitter.Node) {
 func (v *pythonDefUseVisitor) addRef(ref VarRef) {
 	v.refs = append(v.refs, ref)
 	v.variables[ref.Name] = append(v.variables[ref.Name], ref)
+}
+
+// processAttributeAccess handles attribute access like self.x or obj.attribute
+func (v *pythonDefUseVisitor) processAttributeAccess(node *sitter.Node) {
+	if node == nil || node.Type() != "attribute" {
+		return
+	}
+
+	// Extract the full attribute reference (e.g., "self.x")
+	attrName := nodeText(node, v.content)
+
+	// Get line number from the attribute node
+	line := int(node.StartPoint().Row) + 1
+	col := int(node.StartPoint().Column)
+
+	// Add as a use of the attribute
+	v.addRef(VarRef{
+		Name:    attrName,
+		Line:    line,
+		Column:  col,
+		RefType: RefTypeUse,
+	})
+
+	// Continue walking children to find nested uses
+	for i := 0; i < int(node.ChildCount()); i++ {
+		child := node.Child(i)
+		if child != nil {
+			v.processNode(child)
+		}
+	}
 }
 
 func findBlock(node *sitter.Node) *sitter.Node {

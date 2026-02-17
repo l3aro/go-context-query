@@ -35,4 +35,5 @@ type DFGInfo struct {
 	VarRefs       []VarRef            `json:"var_refs"`       // All variable references in order
 	DataflowEdges []DataflowEdge      `json:"dataflow_edges"` // Data flow edges between references
 	Variables     map[string][]VarRef `json:"variables"`      // Variables grouped by name
+	Imports       []string            `json:"imports"`        // Imported modules/functions
 }

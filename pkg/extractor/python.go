@@ -60,9 +60,21 @@ func (e *PythonExtractor) Extract(filePath string) (*types.ModuleInfo, error) {
 
 	root := tree.RootNode()
 
+	// Extract module docstring
+	docstring := e.extractModuleDocstring(root, content)
+
+	// First pass: collect all defined function/method names
+	definedNames := e.collectDefinedNames(root)
+
 	// Extract functions, classes, and other constructs
 	functions := e.extractFunctions(root, content)
 	classes := e.extractClasses(root, content)
+
+	// Extract nested class methods to module functions
+	functions = e.extractNestedClassMethods(classes, functions)
+
+	// Extract call graph edges (intra-file)
+	callGraphEdges := e.extractCallGraphEdges(root, content, definedNames, filePath)
 
 	return &types.ModuleInfo{
 		Path:      filePath,
@@ -70,8 +82,9 @@ func (e *PythonExtractor) Extract(filePath string) (*types.ModuleInfo, error) {
 		Functions: functions,
 		Classes:   classes,
 		Imports:   imports,
+		Docstring: docstring,
 		CallGraph: types.CallGraph{
-			Edges: []types.CallGraphEdge{},
+			Edges: callGraphEdges,
 		},
 	}, nil
 }
@@ -202,7 +215,7 @@ func (e *PythonExtractor) parseFunction(node *sitter.Node, content []byte, isMet
 		case "identifier":
 			name = e.nodeText(child, content)
 		case "parameters":
-			params = e.nodeText(child, content)
+			params = e.extractParameters(child, content)
 		case "type":
 			returnType = e.extractReturnType(child, content)
 		case "block":
@@ -252,6 +265,169 @@ func (e *PythonExtractor) parseDecorator(node *sitter.Node, content []byte) stri
 		}
 	}
 
+	return ""
+}
+
+// extractParameters extracts parameter list with type annotations and default values.
+// Handles positional-only params (*args, **kwargs, and default values).
+func (e *PythonExtractor) extractParameters(node *sitter.Node, content []byte) string {
+	if node == nil {
+		return ""
+	}
+
+	var params []string
+
+	for i := 0; i < int(node.ChildCount()); i++ {
+		child := node.Child(i)
+		if child == nil {
+			continue
+		}
+
+		// Skip parentheses and commas
+		childType := child.Type()
+		if childType == "(" || childType == ")" || childType == "," {
+			continue
+		}
+
+		switch childType {
+		case "positional_separator":
+			// The "/" separator for positional-only parameters
+			params = append(params, "/")
+		case "identifier":
+			// Simple parameter without type annotation
+			param := e.nodeText(child, content)
+			if param != "" {
+				params = append(params, param)
+			}
+		case "typed_parameter":
+			// Parameter with type annotation (e.g., x: int)
+			param := e.extractTypedParameter(child, content)
+			if param != "" {
+				params = append(params, param)
+			}
+		case "positional_or_keyword_parameter":
+			param := e.extractParameterWithDefault(child, content)
+			if param != "" {
+				params = append(params, param)
+			}
+		case "keyword_parameter":
+			param := e.extractParameterWithDefault(child, content)
+			if param != "" {
+				params = append(params, param)
+			}
+		case "optional_parameter":
+			// Parameter with default value
+			param := e.extractParameterWithDefault(child, content)
+			if param != "" {
+				params = append(params, param)
+			}
+		case "variadic_parameter":
+			// *args
+			param := e.extractVariadicParameter(child, content)
+			if param != "" {
+				params = append(params, param)
+			}
+		case "dictionary_variadic_parameter":
+			// **kwargs
+			param := e.extractDictVariadicParameter(child, content)
+			if param != "" {
+				params = append(params, param)
+			}
+		}
+	}
+
+	if len(params) == 0 {
+		return "()"
+	}
+
+	return "(" + strings.Join(params, ", ") + ")"
+}
+
+// extractTypedParameter extracts a typed parameter (e.g., x: int).
+func (e *PythonExtractor) extractTypedParameter(node *sitter.Node, content []byte) string {
+	if node == nil {
+		return ""
+	}
+
+	var paramName string
+	var paramType string
+
+	for i := 0; i < int(node.ChildCount()); i++ {
+		child := node.Child(i)
+		if child == nil {
+			continue
+		}
+
+		switch child.Type() {
+		case "identifier":
+			paramName = e.nodeText(child, content)
+		case "type":
+			paramType = e.nodeText(child, content)
+		}
+	}
+
+	if paramType != "" {
+		return paramName + ": " + paramType
+	}
+	return paramName
+}
+
+// extractParameterWithDefault extracts a parameter that may have a default value.
+func (e *PythonExtractor) extractParameterWithDefault(node *sitter.Node, content []byte) string {
+	if node == nil {
+		return ""
+	}
+
+	var paramName string
+	var paramType string
+	var defaultValue string
+
+	for i := 0; i < int(node.ChildCount()); i++ {
+		child := node.Child(i)
+		if child == nil {
+			continue
+		}
+
+		switch child.Type() {
+		case "identifier":
+			paramName = e.nodeText(child, content)
+		case "type":
+			paramType = e.nodeText(child, content)
+		case "default_value":
+			defaultValue = e.nodeText(child, content)
+		}
+	}
+
+	// Build parameter string
+	if paramType != "" && defaultValue != "" {
+		return paramName + ": " + paramType + " = " + defaultValue
+	} else if paramType != "" {
+		return paramName + ": " + paramType
+	} else if defaultValue != "" {
+		return paramName + " = " + defaultValue
+	}
+	return paramName
+}
+
+// extractVariadicParameter extracts *args parameter.
+func (e *PythonExtractor) extractVariadicParameter(node *sitter.Node, content []byte) string {
+	for i := 0; i < int(node.ChildCount()); i++ {
+		child := node.Child(i)
+		if child != nil && child.Type() == "identifier" {
+			return "*" + e.nodeText(child, content)
+		}
+	}
+	return ""
+}
+
+// extractDictVariadicParameter extracts **kwargs parameter.
+func (e *PythonExtractor) extractDictVariadicParameter(node *sitter.Node, content []byte) string {
+	for i := 0; i < int(node.ChildCount()); i++ {
+		child := node.Child(i)
+		if child != nil && child.Type() == "identifier" {
+			return "**" + e.nodeText(child, content)
+		}
+	}
 	return ""
 }
 
@@ -410,6 +586,7 @@ func (e *PythonExtractor) parseClass(node *sitter.Node, content []byte, decorato
 		Bases:         bases,
 		Docstring:     docstring,
 		Methods:       methods,
+		Decorators:    decorators,
 		LineNumber:    lineNumber,
 	}
 }
@@ -627,9 +804,21 @@ func (e *PythonExtractor) ExtractFromBytes(content []byte, filePath string) (*ty
 
 	root := tree.RootNode()
 
+	// Extract module docstring
+	docstring := e.extractModuleDocstring(root, content)
+
+	// First pass: collect all defined function/method names
+	definedNames := e.collectDefinedNames(root)
+
 	// Extract functions, classes, and other constructs
 	functions := e.extractFunctions(root, content)
 	classes := e.extractClasses(root, content)
+
+	// Extract nested class methods to module functions
+	functions = e.extractNestedClassMethods(classes, functions)
+
+	// Extract call graph edges (intra-file)
+	callGraphEdges := e.extractCallGraphEdges(root, content, definedNames, filePath)
 
 	return &types.ModuleInfo{
 		Path:      filePath,
@@ -637,8 +826,9 @@ func (e *PythonExtractor) ExtractFromBytes(content []byte, filePath string) (*ty
 		Functions: functions,
 		Classes:   classes,
 		Imports:   imports,
+		Docstring: docstring,
 		CallGraph: types.CallGraph{
-			Edges: []types.CallGraphEdge{},
+			Edges: callGraphEdges,
 		},
 	}, nil
 }
@@ -716,4 +906,250 @@ func NewPythonParser() *sitter.Parser {
 	parser := sitter.NewParser()
 	parser.SetLanguage(python.GetLanguage())
 	return parser
+}
+
+// extractModuleDocstring extracts the module-level docstring from the AST.
+// Looks for an expression_statement containing a string as the first statement at module level.
+func (e *PythonExtractor) extractModuleDocstring(node *sitter.Node, content []byte) string {
+	if node == nil {
+		return ""
+	}
+
+	// The module body should be the first child
+	if node.Type() != "module" {
+		return ""
+	}
+
+	// Check the first few children for a docstring
+	for i := 0; i < int(node.ChildCount()) && i < 5; i++ {
+		child := node.Child(i)
+		if child == nil {
+			continue
+		}
+
+		// Skip comments and decorators
+		if child.Type() == "comment" || child.Type() == "string" {
+			// Check if it's a docstring (first statement is a string)
+			if child.Type() == "string" {
+				return e.nodeText(child, content)
+			}
+		}
+
+		// If we hit a non-string expression, stop looking
+		if child.Type() == "expression_statement" {
+			for j := 0; j < int(child.ChildCount()); j++ {
+				grandchild := child.Child(j)
+				if grandchild != nil && (grandchild.Type() == "string" || grandchild.Type() == "concatenated_string") {
+					return e.nodeText(grandchild, content)
+				}
+			}
+		}
+
+		// Stop if we hit a function or class definition (docstring would have been before)
+		if child.Type() == "function_definition" || child.Type() == "class_definition" {
+			break
+		}
+	}
+
+	return ""
+}
+
+// collectDefinedNames collects all defined function and method names in the module.
+// This is used for call graph resolution.
+func (e *PythonExtractor) collectDefinedNames(node *sitter.Node) map[string]bool {
+	definedNames := make(map[string]bool)
+	e.walkForDefinedNames(node, &definedNames)
+	return definedNames
+}
+
+// walkForDefinedNames recursively walks the AST to find all function/method definitions.
+func (e *PythonExtractor) walkForDefinedNames(node *sitter.Node, names *map[string]bool) {
+	if node == nil {
+		return
+	}
+
+	switch node.Type() {
+	case "function_definition":
+		name := e.findFunctionName(node)
+		if name != "" {
+			(*names)[name] = true
+		}
+	case "class_definition":
+		// Also collect class method names
+		methods := e.extractMethods(node, nil)
+		for _, method := range methods {
+			(*names)[method.Name] = true
+		}
+		// Don't descend into class body - methods are handled above
+		return
+	}
+
+	for i := 0; i < int(node.ChildCount()); i++ {
+		e.walkForDefinedNames(node.Child(i), names)
+	}
+}
+
+// findFunctionName extracts the function name from a function_definition node.
+func (e *PythonExtractor) findFunctionName(node *sitter.Node) string {
+	for i := 0; i < int(node.ChildCount()); i++ {
+		child := node.Child(i)
+		if child != nil && child.Type() == "identifier" {
+			return e.nodeText(child, nil)
+		}
+	}
+	return ""
+}
+
+// extractCallGraphEdges extracts intra-file call graph edges.
+// It finds calls to defined functions within the same file.
+func (e *PythonExtractor) extractCallGraphEdges(node *sitter.Node, content []byte, definedNames map[string]bool, filePath string) []types.CallGraphEdge {
+	var edges []types.CallGraphEdge
+
+	// Find all function definitions and extract calls from each
+	e.walkForCallEdges(node, content, definedNames, filePath, &edges, "")
+
+	return edges
+}
+
+// walkForCallEdges walks the AST to find function calls and build edges.
+func (e *PythonExtractor) walkForCallEdges(node *sitter.Node, content []byte, definedNames map[string]bool, filePath string, edges *[]types.CallGraphEdge, parentFunc string) {
+	if node == nil {
+		return
+	}
+
+	switch node.Type() {
+	case "function_definition":
+		funcName := e.findFunctionName(node)
+		if funcName == "" {
+			return
+		}
+
+		// Find the function body (block)
+		var blockNode *sitter.Node
+		for i := 0; i < int(node.ChildCount()); i++ {
+			child := node.Child(i)
+			if child != nil && child.Type() == "block" {
+				blockNode = child
+				break
+			}
+		}
+
+		if blockNode != nil {
+			// Extract calls from this function's body
+			e.extractCallsFromBlock(blockNode, content, definedNames, filePath, funcName, edges)
+		}
+
+		// Don't descend into the function body - we've processed it
+		return
+
+	case "class_definition":
+		// Skip class definitions - their methods are handled separately
+		return
+	}
+
+	for i := 0; i < int(node.ChildCount()); i++ {
+		e.walkForCallEdges(node.Child(i), content, definedNames, filePath, edges, parentFunc)
+	}
+}
+
+// extractCallsFromBlock extracts function calls from a block (function body).
+func (e *PythonExtractor) extractCallsFromBlock(blockNode *sitter.Node, content []byte, definedNames map[string]bool, filePath string, callerFunc string, edges *[]types.CallGraphEdge) {
+	if blockNode == nil {
+		return
+	}
+
+	for i := 0; i < int(blockNode.ChildCount()); i++ {
+		child := blockNode.Child(i)
+		if child == nil {
+			continue
+		}
+
+		e.findCallsInNode(child, content, definedNames, filePath, callerFunc, edges)
+	}
+}
+
+// findCallsInNode recursively finds function calls within a node.
+func (e *PythonExtractor) findCallsInNode(node *sitter.Node, content []byte, definedNames map[string]bool, filePath string, callerFunc string, edges *[]types.CallGraphEdge) {
+	if node == nil {
+		return
+	}
+
+	// Check if this is a call node
+	if node.Type() == "call" {
+		callee := e.extractCallName(node, content)
+		if callee != "" && definedNames[callee] {
+			// Found a call to a defined function
+			*edges = append(*edges, types.CallGraphEdge{
+				SourceFile: filePath,
+				SourceFunc: callerFunc,
+				DestFile:   filePath,
+				DestFunc:   callee,
+			})
+		}
+	}
+
+	// Don't descend into nested function definitions - they have their own scope
+	if node.Type() == "function_definition" {
+		return
+	}
+
+	// Don't descend into class definitions
+	if node.Type() == "class_definition" {
+		return
+	}
+
+	for i := 0; i < int(node.ChildCount()); i++ {
+		e.findCallsInNode(node.Child(i), content, definedNames, filePath, callerFunc, edges)
+	}
+}
+
+// extractCallName extracts the function name from a call node.
+func (e *PythonExtractor) extractCallName(node *sitter.Node, content []byte) string {
+	if node == nil || node.Type() != "call" {
+		return ""
+	}
+
+	// The first child is typically the function being called
+	for i := 0; i < int(node.ChildCount()); i++ {
+		child := node.Child(i)
+		if child == nil {
+			continue
+		}
+
+		switch child.Type() {
+		case "identifier":
+			// Direct function call: func()
+			return e.nodeText(child, content)
+		case "attribute":
+			// Method call: obj.method() - just return the method name
+			for j := 0; j < int(child.ChildCount()); j++ {
+				attrChild := child.Child(j)
+				if attrChild != nil && attrChild.Type() == "identifier" {
+					// Skip "self" method calls
+					methodName := e.nodeText(attrChild, content)
+					if methodName != "self" {
+						return methodName
+					}
+				}
+			}
+		}
+	}
+
+	return ""
+}
+
+// extractNestedClassMethods adds nested class methods to the module's functions list
+// with appropriate decorators to mark them as nested.
+func (e *PythonExtractor) extractNestedClassMethods(classes []types.Class, functions []types.Function) []types.Function {
+	for _, class := range classes {
+		if class.QualifiedName != "" {
+			for _, method := range class.Methods {
+				// Create a copy with qualified name and nested decorator
+				nestedFunc := method
+				nestedFunc.Decorators = append([]string{"nested_in:" + class.QualifiedName}, nestedFunc.Decorators...)
+				functions = append(functions, nestedFunc)
+			}
+		}
+	}
+	return functions
 }

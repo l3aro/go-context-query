@@ -27,6 +27,7 @@ type Class struct {
 	Bases         []string `json:"bases"`
 	Docstring     string   `json:"docstring"`
 	Methods       []Method `json:"methods"`
+	Decorators    []string `json:"decorators"`
 	LineNumber    int      `json:"line_number"`
 }
 

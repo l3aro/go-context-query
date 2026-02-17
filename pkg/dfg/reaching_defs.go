@@ -408,3 +408,39 @@ func (r *ReachingDefsAnalyzer) deduplicateEdges(edges []DataflowEdge) []Dataflow
 
 	return result
 }
+
+// SimpleFallbackAnalyzer provides a simple def-use analysis without CFG.
+// It connects each use to the most recent preceding definition of the same variable.
+type SimpleFallbackAnalyzer struct{}
+
+// NewSimpleFallbackAnalyzer creates a new simple fallback analyzer.
+func NewSimpleFallbackAnalyzer() *SimpleFallbackAnalyzer {
+	return &SimpleFallbackAnalyzer{}
+}
+
+// ComputeDefUseChains computes simple def-use chains without CFG.
+// It finds the nearest preceding definition for each use.
+func (s *SimpleFallbackAnalyzer) ComputeDefUseChains(refs []VarRef) []DataflowEdge {
+	var edges []DataflowEdge
+
+	// Track the most recent definition for each variable
+	recentDefs := make(map[string]*VarRef)
+
+	for i, ref := range refs {
+		switch ref.RefType {
+		case RefTypeDefinition, RefTypeUpdate:
+			recentDefs[ref.Name] = &refs[i]
+
+		case RefTypeUse:
+			if defRef, ok := recentDefs[ref.Name]; ok {
+				edges = append(edges, DataflowEdge{
+					DefRef:  *defRef,
+					UseRef:  ref,
+					VarName: ref.Name,
+				})
+			}
+		}
+	}
+
+	return edges
+}

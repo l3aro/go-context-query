@@ -245,6 +245,38 @@ func (e *pythonCFGExtractor) processBlock(blockNode *sitter.Node, currentBlock *
 				(*currentBlock).EndLine = int(child.EndPoint().Row) + 1
 			}
 
+		case "match_statement":
+			// Handle match statement (Python 3.10+)
+			e.processMatchStatement(child, currentBlock)
+
+		case "async_for_statement":
+			// Handle async for loops
+			e.processForStatement(child, currentBlock)
+
+		case "async_with_statement":
+			// Handle async with statements
+			stmt := e.nodeText(child)
+			if stmt != "" && *currentBlock != nil {
+				(*currentBlock).Statements = append((*currentBlock).Statements, stmt)
+				(*currentBlock).EndLine = int(child.EndPoint().Row) + 1
+			}
+
+		case "yield_expression", "yield":
+			// Handle yield statements (for generators)
+			stmt := e.nodeText(child)
+			if stmt != "" && *currentBlock != nil {
+				(*currentBlock).Statements = append((*currentBlock).Statements, stmt)
+				(*currentBlock).EndLine = int(child.EndPoint().Row) + 1
+			}
+
+		case "named_expression":
+			// Handle walrus operator (:=) in conditions
+			stmt := e.nodeText(child)
+			if stmt != "" && *currentBlock != nil {
+				(*currentBlock).Statements = append((*currentBlock).Statements, stmt)
+				(*currentBlock).EndLine = int(child.EndPoint().Row) + 1
+			}
+
 		default:
 			// Handle other statements as regular statements
 			stmt := e.nodeText(child)
@@ -582,6 +614,10 @@ func (e *pythonCFGExtractor) processTryStatement(node *sitter.Node, currentBlock
 				tryBlock = child
 			}
 		case "exception_handler":
+			// Regular except handler
+			exceptHandlers = append(exceptHandlers, child)
+		case "except_group_clause":
+			// Exception group handler (except*) - Python 3.11+
 			exceptHandlers = append(exceptHandlers, child)
 		case "finally":
 			finallyBlock = child
@@ -641,6 +677,86 @@ func (e *pythonCFGExtractor) processTryStatement(node *sitter.Node, currentBlock
 		*currentBlock = lastExceptBlock
 	} else {
 		*currentBlock = tryBody
+	}
+}
+
+// processMatchStatement handles match statements (Python 3.10+).
+func (e *pythonCFGExtractor) processMatchStatement(node *sitter.Node, currentBlock **CFGBlock) {
+	if node == nil {
+		return
+	}
+
+	// Get the subject (the value being matched)
+	var subject string
+	var cases *sitter.Node
+
+	for i := 0; i < int(node.ChildCount()); i++ {
+		child := node.Child(i)
+		if child == nil {
+			continue
+		}
+		switch child.Type() {
+		case "subject":
+			subject = e.nodeText(child)
+		case "cases":
+			cases = child
+		}
+	}
+
+	// Create branch block for the match
+	matchBlock := e.newBlock(BlockTypeBranch, int(node.StartPoint().Row)+1)
+	matchBlock.Statements = []string{"match " + subject}
+	e.addBlock(matchBlock)
+
+	// Connect current block to match block
+	if *currentBlock != nil {
+		e.addEdge((*currentBlock).ID, matchBlock.ID, EdgeTypeUnconditional)
+	}
+
+	// Process each case
+	if cases != nil {
+		var lastCaseBlock *CFGBlock
+
+		for i := 0; i < int(cases.ChildCount()); i++ {
+			caseChild := cases.Child(i)
+			if caseChild == nil || caseChild.Type() != "case_clause" {
+				continue
+			}
+
+			// Create block for this case
+			caseBlock := e.newBlock(BlockTypePlain, int(caseChild.StartPoint().Row)+1)
+			e.addBlock(caseBlock)
+
+			// Connect from match block (each case is a branch)
+			e.addEdge(matchBlock.ID, caseBlock.ID, EdgeTypeTrue)
+
+			// Process case body
+			prevBlock := caseBlock
+			e.processCaseBlock(caseChild, &prevBlock)
+
+			lastCaseBlock = prevBlock
+		}
+
+		// After all cases, continue from the last case block
+		if lastCaseBlock != nil {
+			*currentBlock = lastCaseBlock
+		}
+	}
+}
+
+// processCaseBlock processes the body of a match case clause.
+func (e *pythonCFGExtractor) processCaseBlock(node *sitter.Node, currentBlock **CFGBlock) {
+	if node == nil {
+		return
+	}
+
+	// Find the block containing the case body
+	for i := 0; i < int(node.ChildCount()); i++ {
+		child := node.Child(i)
+		if child != nil && child.Type() == "block" {
+			e.processBlock(child, currentBlock)
+			break
+		}
 	}
 }
 
