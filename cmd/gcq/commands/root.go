@@ -41,4 +41,5 @@ func init() {
 	RootCmd.AddCommand(semanticCmd)
 	RootCmd.AddCommand(cfgCmd)
 	RootCmd.AddCommand(dfgCmd)
+	RootCmd.AddCommand(sliceCmd)
 }

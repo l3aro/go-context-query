@@ -13,6 +13,8 @@ import (
 
 	"github.com/l3aro/go-context-query/internal/scanner"
 	"github.com/l3aro/go-context-query/pkg/callgraph"
+	"github.com/l3aro/go-context-query/pkg/cfg"
+	"github.com/l3aro/go-context-query/pkg/dfg"
 	"github.com/l3aro/go-context-query/pkg/embed"
 	"github.com/l3aro/go-context-query/pkg/extractor"
 	"github.com/l3aro/go-context-query/pkg/index"
@@ -246,6 +248,17 @@ func (b *Builder) Extract(files []scanner.FileInfo) ([]*CodeUnit, error) {
 					Calls:      callsMap[fmt.Sprintf("%s:%s", relPath, fn.Name)],
 					CalledBy:   callersMap[fmt.Sprintf("%s:%s", relPath, fn.Name)],
 				}
+
+				// Extract CFG summary (optional - graceful degradation)
+				if cfgInfo, err := cfg.ExtractCFG(filePath, fn.Name); err == nil {
+					unit.CFGSummary = fmt.Sprintf("complexity:%d, blocks:%d", cfgInfo.CyclomaticComplexity, len(cfgInfo.Blocks))
+				}
+
+				// Extract DFG summary (optional - graceful degradation)
+				if dfgInfo, err := dfg.ExtractDFG(filePath, fn.Name); err == nil {
+					unit.DFGSummary = fmt.Sprintf("vars:%d, edges:%d", len(dfgInfo.VarRefs), len(dfgInfo.DataflowEdges))
+				}
+
 				units = append(units, unit)
 			}
 

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"strings"
 
 	"github.com/l3aro/go-context-query/pkg/dfg"
 	"github.com/spf13/cobra"
@@ -14,7 +13,8 @@ import (
 var dfgCmd = &cobra.Command{
 	Use:   "dfg <file> <function>",
 	Short: "Extract data flow graph for a function",
-	Long: `Extracts the Data Flow Graph (DFG) for a specific function in a Python file.
+	Long: `Extracts the Data Flow Graph (DFG) for a specific function.
+Supports Python, Go, TypeScript, Rust, Java, C, C++, Ruby, and PHP.
 Outputs JSON with varRefs, dataflowEdges, and variables.`,
 	Args: cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -28,10 +28,6 @@ Outputs JSON with varRefs, dataflowEdges, and variables.`,
 
 		if info.IsDir() {
 			return fmt.Errorf("path is a directory, expected a file: %s", filePath)
-		}
-
-		if !strings.HasSuffix(filePath, ".py") {
-			return fmt.Errorf("unsupported file type: %s (only .py files supported)", filePath)
 		}
 
 		dfgInfo, err := dfg.ExtractDFG(filePath, functionName)

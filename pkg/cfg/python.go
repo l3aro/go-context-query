@@ -3,11 +3,41 @@ package cfg
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	sitter "github.com/smacker/go-tree-sitter"
 	"github.com/smacker/go-tree-sitter/python"
 )
+
+// ExtractCFG extracts the Control Flow Graph from a file for the specified function.
+// It dispatches to the appropriate language-specific extractor based on file extension.
+func ExtractCFG(filePath string, functionName string) (*CFGInfo, error) {
+	ext := strings.ToLower(filepath.Ext(filePath))
+
+	switch ext {
+	case ".py":
+		return extractPythonCFG(filePath, functionName)
+	case ".go":
+		return ExtractGoCFG(filePath, functionName)
+	case ".ts", ".tsx":
+		return ExtractTSCFG(filePath, functionName)
+	case ".rs":
+		return ExtractRustCFG(filePath, functionName)
+	case ".java":
+		return ExtractJavaCFG(filePath, functionName)
+	case ".c":
+		return ExtractCCFG(filePath, functionName)
+	case ".cpp", ".cc":
+		return ExtractCppCFG(filePath, functionName)
+	case ".rb":
+		return ExtractRubyCFG(filePath, functionName)
+	case ".php":
+		return ExtractPhpCFG(filePath, functionName)
+	default:
+		return nil, fmt.Errorf("unsupported file type: %s", filePath)
+	}
+}
 
 // pythonCFGExtractor handles CFG extraction for Python source code.
 type pythonCFGExtractor struct {
@@ -35,9 +65,9 @@ func newPythonCFGExtractor(content []byte, funcName string) *pythonCFGExtractor 
 	}
 }
 
-// ExtractCFG extracts the Control Flow Graph from a Python file for the specified function.
+// extractPythonCFG extracts the Control Flow Graph from a Python file for the specified function.
 // It parses the Python source using tree-sitter and builds a CFG representation.
-func ExtractCFG(filePath string, functionName string) (*CFGInfo, error) {
+func extractPythonCFG(filePath string, functionName string) (*CFGInfo, error) {
 	content, err := os.ReadFile(filePath)
 	if err != nil {
 		return nil, fmt.Errorf("reading file %s: %w", filePath, err)

@@ -15,7 +15,8 @@ import (
 var cfgCmd = &cobra.Command{
 	Use:   "cfg <file> <function>",
 	Short: "Extract control flow graph for a function",
-	Long: `Extracts the Control Flow Graph (CFG) for a specific function in a Python file.
+	Long: `Extracts the Control Flow Graph (CFG) for a specific function.
+Supports Python, Go, TypeScript, Rust, Java, C, C++, Ruby, and PHP.
 Outputs JSON with blocks, edges, and cyclomatic complexity.`,
 	Args: cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -32,12 +33,7 @@ Outputs JSON with blocks, edges, and cyclomatic complexity.`,
 			return fmt.Errorf("path is a directory, expected a file: %s", filePath)
 		}
 
-		// Check if file is a Python file
-		if !isPythonFile(filePath) {
-			return fmt.Errorf("unsupported file type: %s (only .py files supported)", filePath)
-		}
-
-		// Extract CFG for the function
+		// Extract CFG for the function (dispatcher handles language selection)
 		cfgInfo, err := cfg.ExtractCFG(filePath, functionName)
 		if err != nil {
 			// Check if it's a "function not found" error

@@ -109,18 +109,27 @@ func (v *pythonDefUseVisitor) extractReferences(funcNode *sitter.Node) {
 	v.walkBlock(blockNode)
 }
 
+func (v *pythonDefUseVisitor) walkStatement(node *sitter.Node) {
+	if node == nil {
+		return
+	}
+
+	if node.Type() == "expression_statement" {
+		for i := 0; i < int(node.ChildCount()); i++ {
+			child := node.Child(i)
+			if child != nil {
+				v.processNode(child)
+			}
+		}
+	} else {
+		v.walkChildren(node)
+	}
+}
+
 func (v *pythonDefUseVisitor) extractParameters(funcNode *sitter.Node) {
 	paramsNode := findChildByType(funcNode, "parameters", v.content)
 	if paramsNode == nil {
 		return
-	}
-
-	paramTypes := []string{
-		"positional_or_keyword_parameter",
-		"keyword_parameter",
-		"optional_parameter",
-		"variadic_parameter",
-		"dictionary_variadic_parameter",
 	}
 
 	for i := 0; i < int(paramsNode.ChildCount()); i++ {
@@ -129,12 +138,33 @@ func (v *pythonDefUseVisitor) extractParameters(funcNode *sitter.Node) {
 			continue
 		}
 
+		if child.Type() == "identifier" {
+			name := nodeText(child, v.content)
+			if name != "" && !isBuiltin(name) {
+				ref := VarRef{
+					Name:    name,
+					RefType: RefTypeDefinition,
+					Line:    int(child.StartPoint().Row) + 1,
+					Column:  int(child.StartPoint().Column) + 1,
+				}
+				v.addRef(ref)
+			}
+			continue
+		}
+
+		paramTypes := []string{
+			"positional_or_keyword_parameter",
+			"keyword_parameter",
+			"optional_parameter",
+			"variadic_parameter",
+			"dictionary_variadic_parameter",
+		}
 		for _, paramType := range paramTypes {
 			if child.Type() == paramType {
 				identifier := findChildByType(child, "identifier", v.content)
 				if identifier != nil {
 					name := nodeText(identifier, v.content)
-					if name != "" {
+					if name != "" && !isBuiltin(name) {
 						ref := VarRef{
 							Name:    name,
 							RefType: RefTypeDefinition,
@@ -160,7 +190,16 @@ func (v *pythonDefUseVisitor) walkBlock(blockNode *sitter.Node) {
 			continue
 		}
 
-		v.processNode(child)
+		if child.Type() == "expression_statement" {
+			for j := 0; j < int(child.ChildCount()); j++ {
+				grandchild := child.Child(j)
+				if grandchild != nil {
+					v.processNode(grandchild)
+				}
+			}
+		} else {
+			v.processNode(child)
+		}
 	}
 }
 
@@ -195,7 +234,19 @@ func (v *pythonDefUseVisitor) processNode(node *sitter.Node) {
 }
 
 func (v *pythonDefUseVisitor) processAssignment(node *sitter.Node) {
-	left := findChildByType(node, "left", v.content)
+	var left *sitter.Node
+
+	if node.ChildCount() > 0 {
+		firstChild := node.Child(0)
+		if firstChild != nil && firstChild.Type() == "identifier" {
+			left = firstChild
+		}
+	}
+
+	if left == nil {
+		left = findChildByType(node, "left", v.content)
+	}
+
 	if left == nil {
 		v.walkChildren(node)
 		return
@@ -420,7 +471,7 @@ func findBlock(node *sitter.Node) *sitter.Node {
 		return nil
 	}
 
-	if node.Type() == "block" {
+	if node.Type() == "block" || node.Type() == "body" {
 		return node
 	}
 
