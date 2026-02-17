@@ -5,6 +5,7 @@ package index
 import (
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"sort"
 
@@ -17,6 +18,7 @@ type VectorIndex struct {
 	vectors   []float32 // Flattened vectors: [v1[0], v1[1], ..., v1[dim-1], v2[0], ...]
 	metadata  []types.EmbeddingUnit
 	ids       []string
+	idIndex   map[string]int // O(1) ID to index lookup
 	dimension int
 }
 
@@ -34,6 +36,7 @@ func NewVectorIndex(dimension int) *VectorIndex {
 		vectors:   make([]float32, 0, dimension*100), // Pre-allocate for 100 vectors
 		metadata:  make([]types.EmbeddingUnit, 0, 100),
 		ids:       make([]string, 0, 100),
+		idIndex:   make(map[string]int, 100),
 	}
 }
 
@@ -47,12 +50,21 @@ func (v *VectorIndex) Count() int {
 	return len(v.ids)
 }
 
-// Add adds a vector with metadata to the index
+// Add adds a normalized vector with metadata to the index
 func (v *VectorIndex) Add(id string, vector []float32, metadata types.EmbeddingUnit) error {
 	if len(vector) != v.dimension {
 		return fmt.Errorf("vector dimension mismatch: expected %d, got %d", v.dimension, len(vector))
 	}
 
+	// Normalize vector before storing
+	norm := normalize(vector)
+	if norm > 0 {
+		for i := range vector {
+			vector[i] *= norm
+		}
+	}
+
+	v.idIndex[id] = len(v.ids)
 	v.ids = append(v.ids, id)
 	v.vectors = append(v.vectors, vector...)
 	v.metadata = append(v.metadata, metadata)
@@ -60,7 +72,7 @@ func (v *VectorIndex) Add(id string, vector []float32, metadata types.EmbeddingU
 	return nil
 }
 
-// normalize computes the L2 norm of a vector
+// normalize computes the L2 norm (inverse) of a vector
 func normalize(vector []float32) float32 {
 	var sum float32
 	for _, v := range vector {
@@ -69,7 +81,7 @@ func normalize(vector []float32) float32 {
 	if sum == 0 {
 		return 0
 	}
-	return float32(1.0 / float64(sum))
+	return float32(1.0 / float64(math.Sqrt(float64(sum))))
 }
 
 // cosineSimilarity computes cosine similarity between two vectors
@@ -95,10 +107,10 @@ func cosineSimilarityWithNorm(a, b []float32) float32 {
 	if norm == 0 {
 		return 0
 	}
-	return dotProduct / float32(float64(normA)*float64(normB))
+	return dotProduct / norm
 }
 
-// Search finds the top-k most similar vectors using cosine similarity
+// Search finds the top-k most similar vectors using cosine similarity (dot product on normalized vectors)
 func (v *VectorIndex) Search(query []float32, k int) ([]SearchResult, error) {
 	if len(query) != v.dimension {
 		return nil, fmt.Errorf("query dimension mismatch: expected %d, got %d", v.dimension, len(query))
@@ -110,6 +122,14 @@ func (v *VectorIndex) Search(query []float32, k int) ([]SearchResult, error) {
 
 	if k > v.Count() {
 		k = v.Count()
+	}
+
+	// Normalize query for cosine similarity via dot product
+	queryNorm := normalize(query)
+	if queryNorm > 0 {
+		for i := range query {
+			query[i] *= queryNorm
+		}
 	}
 
 	// Compute similarity for all vectors
@@ -126,7 +146,7 @@ func (v *VectorIndex) Search(query []float32, k int) ([]SearchResult, error) {
 
 		scores[i] = scoredIndex{
 			index: i,
-			score: cosineSimilarityWithNorm(query, vector),
+			score: cosineSimilarity(query, vector),
 		}
 	}
 
@@ -201,6 +221,10 @@ func (v *VectorIndex) Load(path string) error {
 	v.vectors = data.Vectors
 	v.metadata = data.Metadata
 
+	for i, id := range v.ids {
+		v.idIndex[id] = i
+	}
+
 	return nil
 }
 
@@ -226,35 +250,42 @@ func LoadOrNew(path string, dimension int) (*VectorIndex, error) {
 
 // Get returns the vector and metadata for a given ID
 func (v *VectorIndex) Get(id string) ([]float32, types.EmbeddingUnit, bool) {
-	for i, existingID := range v.ids {
-		if existingID == id {
-			start := i * v.dimension
-			end := start + v.dimension
-			vector := make([]float32, v.dimension)
-			copy(vector, v.vectors[start:end])
-			return vector, v.metadata[i], true
-		}
+	i, ok := v.idIndex[id]
+	if !ok {
+		return nil, types.EmbeddingUnit{}, false
 	}
-	return nil, types.EmbeddingUnit{}, false
+
+	start := i * v.dimension
+	end := start + v.dimension
+	vector := make([]float32, v.dimension)
+	copy(vector, v.vectors[start:end])
+	return vector, v.metadata[i], true
 }
 
 // Delete removes a vector by ID
 func (v *VectorIndex) Delete(id string) bool {
-	for i, existingID := range v.ids {
-		if existingID == id {
-			// Remove from all slices
-			v.ids = append(v.ids[:i], v.ids[i+1:]...)
-			v.metadata = append(v.metadata[:i], v.metadata[i+1:]...)
-
-			// Remove vector (shift all vectors after this one)
-			start := i * v.dimension
-			end := start + v.dimension
-			v.vectors = append(v.vectors[:start], v.vectors[end:]...)
-
-			return true
-		}
+	i, ok := v.idIndex[id]
+	if !ok {
+		return false
 	}
-	return false
+
+	delete(v.idIndex, id)
+
+	// Remove from all slices
+	v.ids = append(v.ids[:i], v.ids[i+1:]...)
+	v.metadata = append(v.metadata[:i], v.metadata[i+1:]...)
+
+	// Remove vector (shift all vectors after this one)
+	start := i * v.dimension
+	end := start + v.dimension
+	v.vectors = append(v.vectors[:start], v.vectors[end:]...)
+
+	// Rebuild idIndex for remaining elements
+	for j := i; j < len(v.ids); j++ {
+		v.idIndex[v.ids[j]] = j
+	}
+
+	return true
 }
 
 // Clear removes all vectors from the index
@@ -262,6 +293,9 @@ func (v *VectorIndex) Clear() {
 	v.ids = v.ids[:0]
 	v.metadata = v.metadata[:0]
 	v.vectors = v.vectors[:0]
+	for k := range v.idIndex {
+		delete(v.idIndex, k)
+	}
 }
 
 // IterVectors iterates over all vectors with their IDs and metadata
@@ -308,6 +342,10 @@ func (v *VectorIndex) ReadFrom(r io.Reader) (int64, error) {
 	v.ids = data.IDs
 	v.vectors = data.Vectors
 	v.metadata = data.Metadata
+
+	for i, id := range v.ids {
+		v.idIndex[id] = i
+	}
 
 	return int64(len(v.ids)), nil
 }

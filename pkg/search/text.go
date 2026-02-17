@@ -74,7 +74,8 @@ type TextMatch struct {
 
 // TextSearcher provides regex-based text search across files.
 type TextSearcher struct {
-	opts TextSearchOptions
+	opts   TextSearchOptions
+	extMap map[string]bool // O(1) extension lookup
 }
 
 // NewTextSearcher creates a new TextSearcher with the given options.
@@ -82,7 +83,11 @@ func NewTextSearcher(opts TextSearchOptions) *TextSearcher {
 	if opts.Excludes == nil {
 		opts.Excludes = DefaultExcludes
 	}
-	return &TextSearcher{opts: opts}
+	extMap := make(map[string]bool, len(opts.Extensions))
+	for _, e := range opts.Extensions {
+		extMap[e] = true
+	}
+	return &TextSearcher{opts: opts, extMap: extMap}
 }
 
 // Search performs a regex search for pattern in all files under root.
@@ -208,16 +213,9 @@ func (s *TextSearcher) collectFiles(root string) ([]string, error) {
 		}
 
 		// Check extension filter
-		if len(s.opts.Extensions) > 0 {
+		if len(s.extMap) > 0 {
 			ext := filepath.Ext(path)
-			extMatch := false
-			for _, e := range s.opts.Extensions {
-				if ext == e {
-					extMatch = true
-					break
-				}
-			}
-			if !extMatch {
+			if !s.extMap[ext] {
 				return nil
 			}
 		}

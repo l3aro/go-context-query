@@ -24,11 +24,70 @@ const (
 	DefaultTimeout = 5 * time.Second
 )
 
+// connPool manages reusable connections with KeepAlive
+type connPool struct {
+	socketPath string
+	tcpPort    string
+	timeout    time.Duration
+	dialer     *net.Dialer
+	pool       sync.Pool
+}
+
+func newConnPool(socketPath, tcpPort string, timeout time.Duration) *connPool {
+	cp := &connPool{
+		socketPath: socketPath,
+		tcpPort:    tcpPort,
+		timeout:    timeout,
+		dialer: &net.Dialer{
+			Timeout:   timeout,
+			KeepAlive: 30 * time.Second,
+		},
+	}
+	cp.pool.New = func() interface{} {
+		return cp.dial()
+	}
+	return cp
+}
+
+func (cp *connPool) dial() net.Conn {
+	var conn net.Conn
+	var err error
+
+	if useTCP() {
+		conn, err = cp.dialer.Dial("tcp", "localhost:"+cp.tcpPort)
+	} else {
+		conn, err = cp.dialer.Dial("unix", cp.socketPath)
+	}
+
+	if err != nil {
+		return nil
+	}
+	return conn
+}
+
+func (cp *connPool) get() (net.Conn, error) {
+	conn := cp.pool.Get().(net.Conn)
+	if conn == nil {
+		conn = cp.dial()
+		if conn == nil {
+			return nil, fmt.Errorf("failed to dial connection")
+		}
+	}
+	return conn, nil
+}
+
+func (cp *connPool) put(conn net.Conn) {
+	if conn != nil {
+		cp.pool.Put(conn)
+	}
+}
+
 // Client is a daemon client
 type Client struct {
 	socketPath string
 	tcpPort    string
 	timeout    time.Duration
+	connPool   *connPool
 	mu         sync.RWMutex
 	connected  bool
 }
@@ -69,6 +128,8 @@ func New(opts ...Option) *Client {
 		opt(c)
 	}
 
+	c.connPool = newConnPool(c.socketPath, c.tcpPort, c.timeout)
+
 	return c
 }
 
@@ -103,17 +164,9 @@ func useTCP() bool {
 	return !strings.HasPrefix(socketPath, "/")
 }
 
-// connect establishes a connection to the daemon
+// connect establishes a connection to the daemon using connection pooling
 func (c *Client) connect() (net.Conn, error) {
-	var conn net.Conn
-	var err error
-
-	if useTCP() {
-		conn, err = net.Dial("tcp", "localhost:"+c.tcpPort)
-	} else {
-		conn, err = net.Dial("unix", c.socketPath)
-	}
-
+	conn, err := c.connPool.get()
 	if err != nil {
 		return nil, fmt.Errorf("connecting to daemon: %w", err)
 	}
@@ -128,7 +181,7 @@ func (c *Client) sendCommand(ctx context.Context, cmdType string, params any) (m
 	if err != nil {
 		return nil, err
 	}
-	defer conn.Close()
+	defer c.connPool.put(conn)
 
 	// Set deadline from context if available
 	if ctx != nil {

@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/l3aro/go-context-query/pkg/extractor"
 	"github.com/l3aro/go-context-query/pkg/types"
@@ -16,6 +17,8 @@ import (
 // FunctionIndex maps qualified function names to their file paths.
 // The key format is "module.function" or just "function" for simple lookups.
 type FunctionIndex struct {
+	mu sync.RWMutex
+
 	// funcToFile maps function identifiers to file paths
 	// Keys can be:
 	//   - "function_name" (simple name)
@@ -40,6 +43,9 @@ func NewFunctionIndex() *FunctionIndex {
 // funcName is the function name
 // filePath is the absolute path to the file
 func (idx *FunctionIndex) AddFunction(moduleName, funcName, filePath string) {
+	idx.mu.Lock()
+	defer idx.mu.Unlock()
+
 	// Add simple name mapping
 	simpleKey := funcName
 	if _, exists := idx.funcToFile[simpleKey]; !exists {
@@ -66,6 +72,9 @@ func (idx *FunctionIndex) AddFunction(moduleName, funcName, filePath string) {
 // Lookup finds the file path for a given function.
 // It tries qualified names first, then simple names.
 func (idx *FunctionIndex) Lookup(moduleName, funcName string) (string, bool) {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+
 	// Try fully qualified name first
 	if moduleName != "" {
 		key := moduleName + "." + funcName
@@ -213,6 +222,8 @@ func (r *ImportResolver) resolveRelativeImport(module string, fromFile string) (
 
 // Resolver builds and resolves cross-file call graphs.
 type Resolver struct {
+	mu          sync.RWMutex
+	parseMu     sync.Mutex // Protects tree-sitter parser (not thread-safe)
 	rootDir     string
 	index       *FunctionIndex
 	importCache map[string][]types.Import // filePath -> imports
@@ -271,46 +282,60 @@ func (r *Resolver) isSupportedFile(filePath string) bool {
 
 // BuildIndex builds the function index from all files supported by the extractor.
 func (r *Resolver) BuildIndex(filePaths []string) error {
+	var wg sync.WaitGroup
+
 	for _, filePath := range filePaths {
-		if !r.isSupportedFile(filePath) {
-			continue
-		}
+		wg.Add(1)
 
-		// Extract module info
-		moduleInfo, err := r.extractor.Extract(filePath)
-		if err != nil {
-			// Skip files that can't be parsed
-			continue
-		}
+		go func(fp string) {
+			defer wg.Done()
 
-		// Derive module name from file path
-		relPath, err := filepath.Rel(r.rootDir, filePath)
-		if err != nil {
-			continue
-		}
-
-		moduleName := r.filePathToModuleName(relPath)
-
-		// Index all functions
-		for _, fn := range moduleInfo.Functions {
-			r.index.AddFunction(moduleName, fn.Name, filePath)
-		}
-
-		// Index all class methods
-		for _, cls := range moduleInfo.Classes {
-			// Index the class itself
-			r.index.AddFunction(moduleName, cls.Name, filePath)
-			// Index methods
-			for _, method := range cls.Methods {
-				r.index.AddFunction(moduleName, method.Name, filePath)
-				// Also add qualified method name
-				r.index.AddFunction(moduleName, cls.Name+"."+method.Name, filePath)
+			if !r.isSupportedFile(fp) {
+				return
 			}
-		}
 
-		// Cache imports for later use
-		r.importCache[filePath] = moduleInfo.Imports
+			// Parse mutex needed - tree-sitter parser isn't thread-safe
+			r.parseMu.Lock()
+			moduleInfo, err := r.extractor.Extract(fp)
+			r.parseMu.Unlock()
+
+			if err != nil {
+				return
+			}
+
+			// Derive module name from file path
+			relPath, err := filepath.Rel(r.rootDir, fp)
+			if err != nil {
+				return
+			}
+
+			moduleName := r.filePathToModuleName(relPath)
+
+			// Index all functions
+			for _, fn := range moduleInfo.Functions {
+				r.index.AddFunction(moduleName, fn.Name, fp)
+			}
+
+			// Index all class methods
+			for _, cls := range moduleInfo.Classes {
+				// Index the class itself
+				r.index.AddFunction(moduleName, cls.Name, fp)
+				// Index methods
+				for _, method := range cls.Methods {
+					r.index.AddFunction(moduleName, method.Name, fp)
+					// Also add qualified method name
+					r.index.AddFunction(moduleName, cls.Name+"."+method.Name, fp)
+				}
+			}
+
+			// Cache imports for later use (thread-safe)
+			r.mu.Lock()
+			r.importCache[fp] = moduleInfo.Imports
+			r.mu.Unlock()
+		}(filePath)
 	}
+
+	wg.Wait()
 
 	return nil
 }
@@ -338,15 +363,31 @@ func (r *Resolver) ResolveCalls(filePaths []string) (*CrossFileCallGraph, error)
 
 	resolver := NewImportResolver(r.rootDir, r.index)
 
+	var wg sync.WaitGroup
+	errCh := make(chan error, len(filePaths))
+
 	for _, filePath := range filePaths {
 		if !r.isSupportedFile(filePath) {
 			continue
 		}
 
-		if err := r.resolveFileCalls(filePath, resolver); err != nil {
-			// Log error but continue with other files
-			continue
-		}
+		wg.Add(1)
+		go func(fp string) {
+			defer wg.Done()
+
+			if err := r.resolveFileCalls(fp, resolver); err != nil {
+				errCh <- err
+			}
+		}(filePath)
+	}
+
+	wg.Wait()
+	close(errCh)
+
+	// Collect errors but don't fail - we processed what we could
+	for err := range errCh {
+		// Log error but continue - we still have partial results
+		_ = err
 	}
 
 	return r.callGraph, nil
@@ -490,12 +531,14 @@ func (r *Resolver) resolveSingleCall(
 			r.addEdge(edge, false)
 		} else {
 			// Unresolved external call
+			r.mu.Lock()
 			r.callGraph.UnresolvedCalls = append(r.callGraph.UnresolvedCalls, UnresolvedCall{
 				CallerFile: callerFile,
 				CallerFunc: callerFunc,
 				CallName:   call.Name,
 				Reason:     "external module not resolved",
 			})
+			r.mu.Unlock()
 		}
 
 	case MethodCall:
@@ -517,12 +560,14 @@ func (r *Resolver) resolveSingleCall(
 			r.addEdge(edge, true)
 		} else {
 			// Truly unresolved
+			r.mu.Lock()
 			r.callGraph.UnresolvedCalls = append(r.callGraph.UnresolvedCalls, UnresolvedCall{
 				CallerFile: callerFile,
 				CallerFunc: callerFunc,
 				CallName:   call.Name,
 				Reason:     "unknown call target",
 			})
+			r.mu.Unlock()
 		}
 	}
 }
@@ -579,6 +624,9 @@ func (r *Resolver) resolveExternalCall(call CalledFunction, importMap *ImportMap
 
 // addEdge adds an edge to the call graph, tracking whether it's intra-file or cross-file.
 func (r *Resolver) addEdge(edge types.CallGraphEdge, isIntraFile bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
 	r.callGraph.Edges = append(r.callGraph.Edges, edge)
 
 	if isIntraFile {

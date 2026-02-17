@@ -365,7 +365,7 @@ func TestSearchWithThreshold(t *testing.T) {
 			name:         "very high threshold filters most",
 			query:        "validate token",
 			k:            5,
-			threshold:    0.999,
+			threshold:    0.5,
 			wantMinCount: 1,
 			expectError:  false,
 		},

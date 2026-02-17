@@ -4,13 +4,22 @@ package client
 import (
 	"context"
 	"fmt"
+	"sync"
+	"time"
 )
+
+const defaultDaemonCacheTTL = 5 * time.Second
 
 // Router routes commands to daemon or executes them directly.
 type Router struct {
 	client     *Client
 	useDaemon  bool
 	autoDetect bool
+
+	mu           sync.Mutex
+	cachedResult *bool
+	cacheTime    time.Time
+	cacheTTL     time.Duration
 }
 
 // RouterOption is a router option
@@ -45,6 +54,7 @@ func NewRouter(opts ...RouterOption) *Router {
 		client:     New(),
 		useDaemon:  false,
 		autoDetect: true, // Default to auto-detect
+		cacheTTL:   defaultDaemonCacheTTL,
 	}
 
 	for _, opt := range opts {
@@ -59,7 +69,20 @@ func (r *Router) ShouldUseDaemon() bool {
 	if !r.autoDetect {
 		return r.useDaemon
 	}
-	return IsRunning()
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	// Check if cache is valid
+	if r.cachedResult != nil && time.Since(r.cacheTime) < r.cacheTTL {
+		return *r.cachedResult
+	}
+
+	// Detect and cache result
+	result := IsRunning()
+	r.cachedResult = &result
+	r.cacheTime = time.Now()
+	return result
 }
 
 // Search performs a semantic search, routing to daemon or executing directly

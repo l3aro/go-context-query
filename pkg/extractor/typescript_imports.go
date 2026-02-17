@@ -6,11 +6,21 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/l3aro/go-context-query/pkg/types"
 	"github.com/smacker/go-tree-sitter"
 	"github.com/smacker/go-tree-sitter/typescript/typescript"
 )
+
+// typescriptParserPool is a pool of reusable tree-sitter parsers for TypeScript.
+var typescriptParserPool = sync.Pool{
+	New: func() interface{} {
+		parser := sitter.NewParser()
+		parser.SetLanguage(typescript.GetLanguage())
+		return parser
+	},
+}
 
 // TypeScriptImportParser parses TypeScript import statements using tree-sitter.
 type TypeScriptImportParser struct {
@@ -36,7 +46,10 @@ func (p *TypeScriptImportParser) ParseImports(filePath string) ([]types.Import, 
 
 // ParseImportsFromBytes extracts imports from TypeScript source code bytes.
 func (p *TypeScriptImportParser) ParseImportsFromBytes(content []byte, filePath string) ([]types.Import, error) {
-	tree := p.parser.Parse(nil, content)
+	parser := typescriptParserPool.Get().(*sitter.Parser)
+	defer typescriptParserPool.Put(parser)
+
+	tree := parser.Parse(nil, content)
 	if tree == nil {
 		return nil, fmt.Errorf("parsing failed")
 	}

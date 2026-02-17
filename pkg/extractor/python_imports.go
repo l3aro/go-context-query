@@ -5,11 +5,21 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 
+	"github.com/l3aro/go-context-query/pkg/types"
 	"github.com/smacker/go-tree-sitter"
 	"github.com/smacker/go-tree-sitter/python"
-	"github.com/l3aro/go-context-query/pkg/types"
 )
+
+// pythonParserPool is a pool of reusable tree-sitter parsers for Python.
+var pythonParserPool = sync.Pool{
+	New: func() interface{} {
+		parser := sitter.NewParser()
+		parser.SetLanguage(python.GetLanguage())
+		return parser
+	},
+}
 
 // PythonImportParser parses Python import statements using tree-sitter.
 type PythonImportParser struct {
@@ -30,7 +40,10 @@ func (p *PythonImportParser) ParseImports(filePath string) ([]types.Import, erro
 		return nil, fmt.Errorf("reading file: %w", err)
 	}
 
-	tree := p.parser.Parse(nil, content)
+	parser := pythonParserPool.Get().(*sitter.Parser)
+	defer pythonParserPool.Put(parser)
+
+	tree := parser.Parse(nil, content)
 	if tree == nil {
 		return nil, fmt.Errorf("parsing failed")
 	}
@@ -46,7 +59,10 @@ func (p *PythonImportParser) ParseImports(filePath string) ([]types.Import, erro
 
 // ParseImportsFromBytes extracts imports from Python source code bytes.
 func (p *PythonImportParser) ParseImportsFromBytes(content []byte) ([]types.Import, error) {
-	tree := p.parser.Parse(nil, content)
+	parser := pythonParserPool.Get().(*sitter.Parser)
+	defer pythonParserPool.Put(parser)
+
+	tree := parser.Parse(nil, content)
 	if tree == nil {
 		return nil, fmt.Errorf("parsing failed")
 	}

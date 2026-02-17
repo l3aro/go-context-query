@@ -186,7 +186,7 @@ func (s *Searcher) SearchWithThreshold(query string, k int, threshold float32) (
 		return nil, err
 	}
 
-	filtered := make([]SearchResult, 0)
+	filtered := make([]SearchResult, 0, len(results))
 	for _, r := range results {
 		if r.Score >= threshold {
 			filtered = append(filtered, r)

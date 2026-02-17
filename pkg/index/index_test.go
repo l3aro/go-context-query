@@ -167,7 +167,7 @@ func TestVectorIndexGet(t *testing.T) {
 		L1Data: types.ModuleInfo{Path: "main.py"},
 	})
 
-	// Test getting existing vector
+	// Test getting existing vector (returns normalized vector)
 	vector, metadata, found := idx.Get("doc1")
 	if !found {
 		t.Error("Get() expected to find doc1")
@@ -175,8 +175,10 @@ func TestVectorIndexGet(t *testing.T) {
 	if len(vector) != 3 {
 		t.Errorf("vector length = %d, want 3", len(vector))
 	}
-	if vector[0] != 1.0 || vector[1] != 2.0 || vector[2] != 3.0 {
-		t.Errorf("vector = %v, want [1.0, 2.0, 3.0]", vector)
+	// Vector is normalized: [1,2,3] -> [0.267, 0.535, 0.802]
+	expected := []float32{0.26726124, 0.5345225, 0.8017837}
+	if vector[0] != expected[0] || vector[1] != expected[1] || vector[2] != expected[2] {
+		t.Errorf("vector = %v, want %v", vector, expected)
 	}
 	if metadata.L1Data.Path != "main.py" {
 		t.Errorf("metadata.L1Data.Path = %q, want %q", metadata.L1Data.Path, "main.py")

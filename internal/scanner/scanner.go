@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 )
 
 // FileInfo represents information about a discovered file.
@@ -76,101 +77,130 @@ func (s *Scanner) Scan(root string) ([]FileInfo, error) {
 	}
 	s.root = absRoot
 
-	// Load ignore patterns from root
-	ignorePatterns, err := s.loadIgnorePatterns(absRoot)
+	ignoreFiles, err := s.findIgnoreFiles(absRoot)
 	if err != nil {
-		return nil, fmt.Errorf("loading ignore patterns: %w", err)
+		return nil, fmt.Errorf("finding ignore files: %w", err)
 	}
 
 	var files []FileInfo
+	var filesMu sync.Mutex
 
-	err = filepath.Walk(absRoot, func(path string, info os.FileInfo, err error) error {
+	type pendingFile struct {
+		path         string
+		relPathSlash string
+		info         os.FileInfo
+	}
+
+	var pendingFiles []pendingFile
+
+	err = filepath.WalkDir(absRoot, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
-			// Log error but continue walking
 			return nil
 		}
 
-		// Get relative path for pattern matching
 		relPath, err := filepath.Rel(absRoot, path)
 		if err != nil {
 			return nil
 		}
 
-		// Skip root itself
 		if relPath == "." {
 			return nil
 		}
 
-		// Normalize path for pattern matching (use forward slashes)
 		relPathSlash := filepath.ToSlash(relPath)
 
-		// Check if should skip hidden files/directories
-		if s.opts.SkipHidden && s.isHidden(info.Name()) {
-			if info.IsDir() {
+		if s.opts.SkipHidden && s.isHidden(d.Name()) {
+			if d.IsDir() {
 				return filepath.SkipDir
 			}
 			return nil
 		}
 
-		// Check default excludes for directories
-		if info.IsDir() {
-			if s.isDefaultExcluded(info.Name()) {
+		if d.IsDir() {
+			if s.isDefaultExcluded(d.Name()) {
 				return filepath.SkipDir
 			}
-			// Load nested .gcqignore if present
-			nestedPatterns, err := s.loadIgnorePatterns(path)
-			if err == nil && len(nestedPatterns) > 0 {
-				ignorePatterns = append(ignorePatterns, nestedPatterns...)
-			}
 			return nil
 		}
 
-		// Check ignore patterns
-		if s.matchesIgnorePatterns(relPathSlash, ignorePatterns) {
+		patterns := s.getPatternsForPath(absRoot, relPath, ignoreFiles)
+		if s.matchesIgnorePatterns(relPathSlash, patterns) {
 			return nil
 		}
 
-		// Handle symlinks
-		if info.Mode()&os.ModeSymlink != 0 {
-			if !s.opts.FollowSymlinks {
-				return nil
-			}
-			// Resolve symlink and check if it's within root
-			realPath, err := filepath.EvalSymlinks(path)
-			if err != nil {
-				return nil // Skip broken symlinks
-			}
-			realAbs, err := filepath.Abs(realPath)
-			if err != nil {
-				return nil
-			}
-			// Ensure symlink target is within root
-			if !strings.HasPrefix(realAbs, absRoot+string(filepath.Separator)) && realAbs != absRoot {
-				return nil
-			}
-			// Get info of the target
-			targetInfo, err := os.Stat(realPath)
-			if err != nil {
-				return nil
-			}
-			if targetInfo.IsDir() {
-				return nil // Don't follow directory symlinks
-			}
-			info = targetInfo
+		info, err := d.Info()
+		if err != nil {
+			return nil
 		}
 
-		// Detect language from extension
-		language := DetectLanguage(filepath.Ext(path))
-
-		files = append(files, FileInfo{
-			Path:     relPathSlash,
-			FullPath: path,
-			Language: language,
-			Size:     info.Size(),
+		pendingFiles = append(pendingFiles, pendingFile{
+			path:         path,
+			relPathSlash: relPathSlash,
+			info:         info,
 		})
 
 		return nil
 	})
+
+	if err != nil {
+		return nil, fmt.Errorf("walking directory: %w", err)
+	}
+
+	var wg sync.WaitGroup
+	results := make([]FileInfo, len(pendingFiles))
+
+	for i, pf := range pendingFiles {
+		wg.Add(1)
+		go func(index int, p pendingFile) {
+			defer wg.Done()
+
+			info := p.info
+
+			if info.Mode()&os.ModeSymlink != 0 {
+				if !s.opts.FollowSymlinks {
+					return
+				}
+				realPath, err := filepath.EvalSymlinks(p.path)
+				if err != nil {
+					return
+				}
+				realAbs, err := filepath.Abs(realPath)
+				if err != nil {
+					return
+				}
+				if !strings.HasPrefix(realAbs, absRoot+string(filepath.Separator)) && realAbs != absRoot {
+					return
+				}
+				targetInfo, err := os.Stat(realPath)
+				if err != nil {
+					return
+				}
+				if targetInfo.IsDir() {
+					return
+				}
+				info = targetInfo
+			}
+
+			language := DetectLanguage(filepath.Ext(p.path))
+
+			filesMu.Lock()
+			results[index] = FileInfo{
+				Path:     p.relPathSlash,
+				FullPath: p.path,
+				Language: language,
+				Size:     info.Size(),
+			}
+			filesMu.Unlock()
+		}(i, pf)
+	}
+
+	wg.Wait()
+
+	for _, f := range results {
+		if f.Path != "" {
+			files = append(files, f)
+		}
+	}
 
 	if err != nil {
 		return nil, fmt.Errorf("walking directory: %w", err)
@@ -218,6 +248,73 @@ func (s *Scanner) loadIgnorePatterns(dir string) ([]IgnorePattern, error) {
 	}
 
 	return patterns, scanner.Err()
+}
+
+// findIgnoreFiles finds all .gcqignore files in the directory tree.
+func (s *Scanner) findIgnoreFiles(root string) (map[string][]IgnorePattern, error) {
+	ignoreFiles := make(map[string][]IgnorePattern)
+
+	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+
+		if !d.IsDir() {
+			return nil
+		}
+
+		// Skip hidden directories
+		if s.opts.SkipHidden && s.isHidden(d.Name()) {
+			return nil
+		}
+
+		if s.isDefaultExcluded(d.Name()) {
+			return nil
+		}
+
+		patterns, err := s.loadIgnorePatterns(path)
+		if err != nil {
+			return nil // Continue walking even if we can't read ignore file
+		}
+
+		if len(patterns) > 0 {
+			ignoreFiles[path] = patterns
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("finding ignore files: %w", err)
+	}
+
+	return ignoreFiles, nil
+}
+
+// getPatternsForPath returns all ignore patterns that apply to a given path.
+// Patterns are collected from all ancestor directories, with closer ancestors
+// taking precedence (later patterns override earlier ones).
+func (s *Scanner) getPatternsForPath(absRoot, relPath string, ignoreFiles map[string][]IgnorePattern) []IgnorePattern {
+	var result []IgnorePattern
+
+	relPath = filepath.ToSlash(relPath)
+	parts := strings.Split(relPath, "/")
+
+	// Build all ancestor paths from root to the file's parent
+	for i := 0; i <= len(parts); i++ {
+		var ancestorPath string
+		if i == 0 {
+			ancestorPath = absRoot
+		} else {
+			ancestorPath = filepath.Join(absRoot, strings.Join(parts[:i], string(filepath.Separator)))
+		}
+
+		if patterns, ok := ignoreFiles[ancestorPath]; ok {
+			result = append(result, patterns...)
+		}
+	}
+
+	return result
 }
 
 // matchesIgnorePatterns checks if the given path should be ignored based on patterns.

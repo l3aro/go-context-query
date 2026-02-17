@@ -8,9 +8,9 @@ import (
 	"os"
 	"strings"
 
+	"github.com/l3aro/go-context-query/pkg/types"
 	sitter "github.com/smacker/go-tree-sitter"
 	"github.com/smacker/go-tree-sitter/python"
-	"github.com/l3aro/go-context-query/pkg/types"
 )
 
 // CallType represents the type of function call
@@ -398,27 +398,81 @@ func (b *Builder) determineAttributeCallType(base, method string, graph *IntraFi
 	return UnknownCall
 }
 
+// pythonBuiltins is a set of common Python builtin functions for O(1) lookup
+var pythonBuiltins = map[string]bool{
+	"abs":          true,
+	"all":          true,
+	"any":          true,
+	"ascii":        true,
+	"bin":          true,
+	"bool":         true,
+	"breakpoint":   true,
+	"bytearray":    true,
+	"bytes":        true,
+	"callable":     true,
+	"chr":          true,
+	"classmethod":  true,
+	"compile":      true,
+	"complex":      true,
+	"delattr":      true,
+	"dict":         true,
+	"dir":          true,
+	"divmod":       true,
+	"enumerate":    true,
+	"eval":         true,
+	"exec":         true,
+	"filter":       true,
+	"float":        true,
+	"format":       true,
+	"frozenset":    true,
+	"getattr":      true,
+	"globals":      true,
+	"hasattr":      true,
+	"hash":         true,
+	"help":         true,
+	"hex":          true,
+	"id":           true,
+	"input":        true,
+	"int":          true,
+	"isinstance":   true,
+	"issubclass":   true,
+	"iter":         true,
+	"len":          true,
+	"list":         true,
+	"locals":       true,
+	"map":          true,
+	"max":          true,
+	"min":          true,
+	"next":         true,
+	"object":       true,
+	"oct":          true,
+	"open":         true,
+	"ord":          true,
+	"pow":          true,
+	"print":        true,
+	"property":     true,
+	"range":        true,
+	"repr":         true,
+	"reversed":     true,
+	"round":        true,
+	"set":          true,
+	"setattr":      true,
+	"slice":        true,
+	"sorted":       true,
+	"staticmethod": true,
+	"str":          true,
+	"sum":          true,
+	"super":        true,
+	"tuple":        true,
+	"type":         true,
+	"vars":         true,
+	"zip":          true,
+	"__import__":   true,
+}
+
 // isPythonBuiltin checks if a name is a common Python builtin
 func isPythonBuiltin(name string) bool {
-	builtins := []string{
-		"abs", "all", "any", "ascii", "bin", "bool", "breakpoint", "bytearray",
-		"bytes", "callable", "chr", "classmethod", "compile", "complex",
-		"delattr", "dict", "dir", "divmod", "enumerate", "eval", "exec",
-		"filter", "float", "format", "frozenset", "getattr", "globals",
-		"hasattr", "hash", "help", "hex", "id", "input", "int", "isinstance",
-		"issubclass", "iter", "len", "list", "locals", "map", "max", "min",
-		"next", "object", "oct", "open", "ord", "pow", "print", "property",
-		"range", "repr", "reversed", "round", "set", "setattr", "slice",
-		"sorted", "staticmethod", "str", "sum", "super", "tuple", "type",
-		"vars", "zip", "__import__",
-	}
-
-	for _, b := range builtins {
-		if b == name {
-			return true
-		}
-	}
-	return false
+	return pythonBuiltins[name]
 }
 
 // isLikelyInstanceName checks if a variable name likely refers to an instance

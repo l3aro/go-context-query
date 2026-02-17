@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/l3aro/go-context-query/pkg/types"
 	sitter "github.com/smacker/go-tree-sitter"
@@ -63,6 +64,10 @@ type LanguageRegistry struct {
 	extensions map[string]Language
 }
 
+// globalLanguageRegistry holds the singleton LanguageRegistry instance.
+var globalLanguageRegistry *LanguageRegistry
+var once sync.Once
+
 // NewLanguageRegistry creates a new language registry with default language mappings.
 func NewLanguageRegistry() *LanguageRegistry {
 	registry := &LanguageRegistry{
@@ -87,6 +92,14 @@ func NewLanguageRegistry() *LanguageRegistry {
 	registry.RegisterLanguage(CSharp, []string{".cs", ".csx"}, NewCSharpExtractor, NewCSharpParser)
 
 	return registry
+}
+
+// GetLanguageRegistry returns the singleton LanguageRegistry instance.
+func GetLanguageRegistry() *LanguageRegistry {
+	once.Do(func() {
+		globalLanguageRegistry = NewLanguageRegistry()
+	})
+	return globalLanguageRegistry
 }
 
 // RegisterLanguage registers a new language with the registry.
@@ -179,7 +192,7 @@ func NewBaseExtractor(parser *sitter.Parser, lang Language) *BaseExtractor {
 
 // ExtractFile extracts module information from a file using the appropriate extractor.
 func ExtractFile(filePath string) (*types.ModuleInfo, error) {
-	registry := NewLanguageRegistry()
+	registry := GetLanguageRegistry()
 	extractor, err := registry.GetExtractor(filePath)
 	if err != nil {
 		return nil, err
@@ -189,7 +202,7 @@ func ExtractFile(filePath string) (*types.ModuleInfo, error) {
 
 // ExampleLanguageRegistry demonstrates LanguageRegistry usage
 func ExampleLanguageRegistry() {
-	registry := NewLanguageRegistry()
+	registry := GetLanguageRegistry()
 
 	// Check if a file is supported
 	fmt.Printf("Python supported: %v\n", registry.IsSupported("test.py"))

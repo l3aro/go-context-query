@@ -9,7 +9,9 @@ import (
 	"io"
 	"math"
 	"os"
+	"reflect"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/vmihailenco/msgpack/v5"
@@ -159,12 +161,25 @@ type Options struct {
 }
 
 // New creates a new LRU cache with the given options.
+// Default limits are applied if not specified:
+//   - MaxSize: 10000 entries
+//   - MaxBytes: 100MB
 func New(opts Options) *LRUCache {
+	// Apply sensible defaults
+	maxSize := opts.MaxSize
+	maxBytes := opts.MaxBytes
+	if maxSize == 0 {
+		maxSize = 10000
+	}
+	if maxBytes == 0 {
+		maxBytes = 100 * 1024 * 1024 // 100MB
+	}
+
 	c := &LRUCache{
 		items:    make(map[string]*listItem),
 		lru:      newList(),
-		maxSize:  opts.MaxSize,
-		maxBytes: opts.MaxBytes,
+		maxSize:  maxSize,
+		maxBytes: maxBytes,
 		onEvict:  opts.OnEvict,
 	}
 	return c
@@ -172,18 +187,28 @@ func New(opts Options) *LRUCache {
 
 // Get retrieves a value from the cache.
 func (c *LRUCache) Get(key string) (interface{}, bool) {
+	// Read-only lookup with RLock
+	c.mu.RLock()
+	item, found := c.items[key]
+	if !found {
+		c.mu.RUnlock()
+		return nil, false
+	}
+	value := item.Value
+	c.mu.RUnlock()
+
+	// LRU update with write lock (after releasing read lock)
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	item, found := c.items[key]
+	// Re-check: item may have been evicted between unlock and lock
+	item, found = c.items[key]
 	if !found {
 		return nil, false
 	}
-
-	// Update access time and move to front
 	item.AccessedAt = time.Now()
 	c.lru.moveToFront(item)
-	return item.Value, true
+	return value, true
 }
 
 // Set stores a value in the cache.
@@ -421,8 +446,11 @@ func LoadFromFile(c *LRUCache, path string) error {
 	return c.Load(f)
 }
 
-// estimateSize estimates the size of a value in bytes.
+// estimateSize estimates the size of a value in bytes using reflection.
 func estimateSize(value interface{}) int {
+	if value == nil {
+		return 0
+	}
 	switch v := value.(type) {
 	case string:
 		return len(v)
@@ -438,10 +466,98 @@ func estimateSize(value interface{}) int {
 		return len(v) * 4
 	case []int64:
 		return len(v) * 8
+	case []uint16:
+		return len(v) * 2
+	case []uint32:
+		return len(v) * 4
+	case []uint64:
+		return len(v) * 8
+	case []string:
+		// Estimate string slice: pointer (8) + string header (16) per element + actual string data
+		sum := len(v) * 24
+		for _, s := range v {
+			sum += len(s)
+		}
+		return sum
+	case []interface{}:
+		sum := len(v) * 16 // interface{} size per element
+		for _, e := range v {
+			sum += estimateSize(e)
+		}
+		return sum
+	case map[string]interface{}:
+		// Rough estimate: 64 bytes per map entry overhead + key/value sizes
+		overhead := len(v) * 64
+		sum := overhead
+		for k, val := range v {
+			sum += len(k) + 8 + estimateSize(val)
+		}
+		return sum
+	case bool:
+		return 1
+	case int, int8, int16, int32, int64:
+		return 8
+	case uint, uint8, uint16, uint32, uint64:
+		return 8
+	case float32:
+		return 4
+	case float64:
+		return 8
+	case complex64:
+		return 8
+	case complex128:
+		return 16
 	default:
-		// Rough estimate for complex types
-		b, _ := json.Marshal(v)
-		return len(b)
+		// Use reflection for complex types
+		return estimateSizeReflect(value)
+	}
+}
+
+// estimateSizeReflect uses reflection to estimate size of complex types.
+func estimateSizeReflect(value interface{}) int {
+	rv := reflect.ValueOf(value)
+	switch rv.Kind() {
+	case reflect.Ptr:
+		if rv.IsNil() {
+			return 8 // pointer size
+		}
+		// Follow pointer and estimate underlying value
+		return 8 + estimateSizeReflect(rv.Elem().Interface())
+	case reflect.Slice:
+		if rv.IsNil() {
+			return 24 // nil slice header
+		}
+		elemSize := int(rv.Type().Elem().Size())
+		// Slice header: 24 bytes (ptr + len + cap) + element data
+		return 24 + rv.Len()*elemSize
+	case reflect.Map:
+		if rv.IsNil() {
+			return 48 // nil map header
+		}
+		// Rough estimate: 64 bytes per entry + key/value sizes
+		return 48 + rv.Len()*64
+	case reflect.Struct:
+		size := int(rv.Type().Size())
+		// Add estimated size for string fields (not captured in Size())
+		for i := 0; i < rv.NumField(); i++ {
+			f := rv.Field(i)
+			if f.Kind() == reflect.String {
+				size += f.Len()
+			}
+		}
+		return size
+	case reflect.Array:
+		elemSize := int(rv.Type().Elem().Size())
+		return rv.Len() * elemSize
+	case reflect.Interface:
+		if rv.IsNil() {
+			return 16 // nil interface
+		}
+		// Estimate the value inside the interface
+		return 16 + estimateSizeReflect(rv.Elem().Interface())
+	default:
+		// Fallback to type size
+		return int(reflect.TypeOf(value).Size())
 	}
 }
 
@@ -556,7 +672,6 @@ func NewStatsCache(opts Options) *StatsCache {
 // StatsCache wraps an LRU cache with statistics tracking.
 type StatsCache struct {
 	*LRUCache
-	mu        sync.RWMutex
 	hitCount  int64
 	missCount int64
 }
@@ -564,45 +679,41 @@ type StatsCache struct {
 // Get retrieves a value and updates statistics.
 func (c *StatsCache) Get(key string) (interface{}, bool) {
 	val, found := c.LRUCache.Get(key)
-	c.mu.Lock()
 	if found {
-		c.hitCount++
+		atomic.AddInt64(&c.hitCount, 1)
 	} else {
-		c.missCount++
+		atomic.AddInt64(&c.missCount, 1)
 	}
-	c.mu.Unlock()
 	return val, found
 }
 
 // Stats returns the current cache statistics.
 func (c *StatsCache) Stats() Stats {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
+	hitCount := atomic.LoadInt64(&c.hitCount)
+	missCount := atomic.LoadInt64(&c.missCount)
 	return Stats{
 		Length:       c.LRUCache.Len(),
 		CurrentBytes: c.LRUCache.CurrentBytes(),
-		HitCount:     c.hitCount,
-		MissCount:    c.missCount,
+		HitCount:     hitCount,
+		MissCount:    missCount,
 	}
 }
 
 // HitRate returns the cache hit rate.
 func (c *StatsCache) HitRate() float64 {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	total := c.hitCount + c.missCount
+	hitCount := atomic.LoadInt64(&c.hitCount)
+	missCount := atomic.LoadInt64(&c.missCount)
+	total := hitCount + missCount
 	if total == 0 {
 		return 0
 	}
-	return float64(c.hitCount) / float64(total)
+	return float64(hitCount) / float64(total)
 }
 
 // ResetStats resets the statistics counters.
 func (c *StatsCache) ResetStats() {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.hitCount = 0
-	c.missCount = 0
+	atomic.StoreInt64(&c.hitCount, 0)
+	atomic.StoreInt64(&c.missCount, 0)
 }
 
 // NewShardedCache creates a cache with multiple shards for better concurrency.
