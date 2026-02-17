@@ -31,7 +31,6 @@ func Execute() error {
 }
 
 func init() {
-	// Add subcommands
 	RootCmd.AddCommand(treeCmd)
 	RootCmd.AddCommand(structureCmd)
 	RootCmd.AddCommand(extractCmd)
@@ -40,4 +39,6 @@ func init() {
 	RootCmd.AddCommand(impactCmd)
 	RootCmd.AddCommand(warmCmd)
 	RootCmd.AddCommand(semanticCmd)
+	RootCmd.AddCommand(cfgCmd)
+	RootCmd.AddCommand(dfgCmd)
 }

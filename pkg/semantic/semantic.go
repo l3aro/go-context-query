@@ -38,6 +38,10 @@ type CodeUnit struct {
 	Calls []string `json:"calls"`
 	// CalledBy is the list of functions that call this unit (backward)
 	CalledBy []string `json:"called_by"`
+	// CFGSummary is an optional control flow graph summary (complexity, blocks)
+	CFGSummary string `json:"cfg_summary,omitempty"`
+	// DFGSummary is an optional data flow graph summary (variables, edges)
+	DFGSummary string `json:"dfg_summary,omitempty"`
 }
 
 // EmbeddingText builds rich text for embedding from a CodeUnit.
@@ -77,6 +81,16 @@ func EmbeddingText(unit *CodeUnit) string {
 			callersStr = callersStr[:200] + "..."
 		}
 		parts = append(parts, fmt.Sprintf("Called by: %s", callersStr))
+	}
+
+	// L3: Control flow summary (optional)
+	if unit.CFGSummary != "" {
+		parts = append(parts, fmt.Sprintf("Control flow: %s", unit.CFGSummary))
+	}
+
+	// L3: Data flow summary (optional)
+	if unit.DFGSummary != "" {
+		parts = append(parts, fmt.Sprintf("Data flow: %s", unit.DFGSummary))
 	}
 
 	return strings.Join(parts, "\n")
