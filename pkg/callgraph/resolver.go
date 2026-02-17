@@ -395,8 +395,11 @@ func (r *Resolver) ResolveCalls(filePaths []string) (*CrossFileCallGraph, error)
 
 // resolveFileCalls resolves calls within a single file.
 func (r *Resolver) resolveFileCalls(filePath string, resolver *ImportResolver) error {
-	// Get module info
+	// Get module info - must hold parseMu since tree-sitter parser is not thread-safe
+	r.parseMu.Lock()
 	moduleInfo, err := r.extractor.Extract(filePath)
+	r.parseMu.Unlock()
+
 	if err != nil {
 		return fmt.Errorf("extracting module info: %w", err)
 	}
