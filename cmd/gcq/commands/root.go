@@ -21,6 +21,7 @@ Commands:
   impact      Find callers of a function
   warm        Build semantic index for a project
   semantic    Semantic search over indexed code
+  notify      Mark a file as dirty for tracking
 
 Use "gcq [command] --help" for more information about a command.`,
 }
@@ -42,4 +43,6 @@ func init() {
 	RootCmd.AddCommand(cfgCmd)
 	RootCmd.AddCommand(dfgCmd)
 	RootCmd.AddCommand(sliceCmd)
+	RootCmd.AddCommand(searchCmd)
+	RootCmd.AddCommand(notifyCmd)
 }
