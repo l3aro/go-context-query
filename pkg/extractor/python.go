@@ -66,6 +66,7 @@ func (e *PythonExtractor) Extract(filePath string) (*types.ModuleInfo, error) {
 
 	return &types.ModuleInfo{
 		Path:      filePath,
+		Language:  "python",
 		Functions: functions,
 		Classes:   classes,
 		Imports:   imports,
@@ -76,10 +77,10 @@ func (e *PythonExtractor) Extract(filePath string) (*types.ModuleInfo, error) {
 }
 
 // extractFunctions extracts all function definitions from the AST.
-// This includes both top-level functions and can optionally include nested functions.
+// This includes both top-level functions and nested functions.
 func (e *PythonExtractor) extractFunctions(node *sitter.Node, content []byte) []types.Function {
 	var functions []types.Function
-	e.walkForFunctions(node, content, &functions, false, false)
+	e.walkForFunctions(node, content, &functions, false, "")
 	return functions
 }
 
@@ -89,8 +90,8 @@ func (e *PythonExtractor) extractFunctions(node *sitter.Node, content []byte) []
 //   - content: The source code content for extracting text
 //   - functions: Accumulator for found functions
 //   - isMethod: Whether the function is a class method
-//   - includeNested: Whether to include nested functions (currently only top-level)
-func (e *PythonExtractor) walkForFunctions(node *sitter.Node, content []byte, functions *[]types.Function, isMethod bool, includeNested bool) {
+//   - parentName: Name of the parent function (empty for top-level)
+func (e *PythonExtractor) walkForFunctions(node *sitter.Node, content []byte, functions *[]types.Function, isMethod bool, parentName string) {
 	if node == nil {
 		return
 	}
@@ -101,15 +102,26 @@ func (e *PythonExtractor) walkForFunctions(node *sitter.Node, content []byte, fu
 		decorators := e.collectDecoratorsFromSiblings(node, content)
 		fn := e.parseFunction(node, content, isMethod, decorators)
 		if fn != nil {
+			// Set NestedIn to parent function name
+			fn.NestedIn = parentName
+			// Add nested_in decorator like Python version
+			if parentName != "" {
+				fn.Decorators = append(fn.Decorators, "nested_in:"+parentName)
+			}
 			*functions = append(*functions, *fn)
 		}
-		// Continue walking to find nested functions if needed
-		if includeNested {
-			for i := 0; i < int(node.ChildCount()); i++ {
-				e.walkForFunctions(node.Child(i), content, functions, isMethod, includeNested)
+		// Continue walking to find nested functions
+		// The block (function body) is where nested functions are defined
+		for i := 0; i < int(node.ChildCount()); i++ {
+			child := node.Child(i)
+			if child != nil && child.Type() == "block" {
+				// Walk the function body to find nested functions
+				for j := 0; j < int(child.ChildCount()); j++ {
+					e.walkForFunctions(child.Child(j), content, functions, isMethod, fn.Name)
+				}
 			}
 		}
-		return // Don't traverse into function bodies by default
+		return
 	case "class_definition":
 		// Don't traverse into classes for top-level functions
 		// Class methods will be handled by extractClasses
@@ -118,7 +130,7 @@ func (e *PythonExtractor) walkForFunctions(node *sitter.Node, content []byte, fu
 
 	// Recursively walk children
 	for i := 0; i < int(node.ChildCount()); i++ {
-		e.walkForFunctions(node.Child(i), content, functions, isMethod, includeNested)
+		e.walkForFunctions(node.Child(i), content, functions, isMethod, parentName)
 	}
 }
 
@@ -318,32 +330,49 @@ func (e *PythonExtractor) extractDocstring(blockNode *sitter.Node, content []byt
 // extractClasses extracts all class definitions from the AST.
 func (e *PythonExtractor) extractClasses(node *sitter.Node, content []byte) []types.Class {
 	var classes []types.Class
-	e.walkForClasses(node, content, &classes)
+	e.walkForClasses(node, content, &classes, "")
 	return classes
 }
 
 // walkForClasses recursively walks the AST to find class definitions.
-func (e *PythonExtractor) walkForClasses(node *sitter.Node, content []byte, classes *[]types.Class) {
+// Parameters:
+//   - node: The current AST node being examined
+//   - content: The source code content for extracting text
+//   - classes: Accumulator for found classes
+//   - parentName: Name of the parent class (empty for top-level)
+func (e *PythonExtractor) walkForClasses(node *sitter.Node, content []byte, classes *[]types.Class, parentName string) {
 	if node == nil {
 		return
 	}
 
 	if node.Type() == "class_definition" {
 		decorators := e.collectDecoratorsFromSiblings(node, content)
-		class := e.parseClass(node, content, decorators)
+		class := e.parseClass(node, content, decorators, parentName)
 		if class != nil {
 			*classes = append(*classes, *class)
+			// Continue walking to find nested classes within this class
+			// The block (class body) is where nested classes are defined
+			for i := 0; i < int(node.ChildCount()); i++ {
+				child := node.Child(i)
+				if child != nil && child.Type() == "block" {
+					// Walk the class body to find nested classes
+					for j := 0; j < int(child.ChildCount()); j++ {
+						e.walkForClasses(child.Child(j), content, classes, class.Name)
+					}
+				}
+			}
 		}
 		return
 	}
 
 	for i := 0; i < int(node.ChildCount()); i++ {
-		e.walkForClasses(node.Child(i), content, classes)
+		e.walkForClasses(node.Child(i), content, classes, parentName)
 	}
 }
 
 // parseClass extracts class information from a class_definition node.
-func (e *PythonExtractor) parseClass(node *sitter.Node, content []byte, decorators []string) *types.Class {
+// If parentName is provided, QualifiedName is set to "parentName.ClassName".
+func (e *PythonExtractor) parseClass(node *sitter.Node, content []byte, decorators []string, parentName string) *types.Class {
 	var name string
 	var bases []string
 	var docstring string
@@ -369,12 +398,19 @@ func (e *PythonExtractor) parseClass(node *sitter.Node, content []byte, decorato
 
 	methods := e.extractMethods(node, content)
 
+	// Build qualified name for nested classes
+	qualifiedName := ""
+	if parentName != "" {
+		qualifiedName = parentName + "." + name
+	}
+
 	return &types.Class{
-		Name:       name,
-		Bases:      bases,
-		Docstring:  docstring,
-		Methods:    methods,
-		LineNumber: lineNumber,
+		Name:          name,
+		QualifiedName: qualifiedName,
+		Bases:         bases,
+		Docstring:     docstring,
+		Methods:       methods,
+		LineNumber:    lineNumber,
 	}
 }
 
@@ -597,6 +633,7 @@ func (e *PythonExtractor) ExtractFromBytes(content []byte, filePath string) (*ty
 
 	return &types.ModuleInfo{
 		Path:      filePath,
+		Language:  "python",
 		Functions: functions,
 		Classes:   classes,
 		Imports:   imports,

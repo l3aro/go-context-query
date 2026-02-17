@@ -2,6 +2,8 @@
 // It includes types for functions, classes, imports, call graphs, and module information.
 package types
 
+import "fmt"
+
 // Function represents a function definition
 type Function struct {
 	Name       string   `json:"name"`
@@ -12,6 +14,7 @@ type Function struct {
 	IsMethod   bool     `json:"is_method"`
 	IsAsync    bool     `json:"is_async"`
 	Decorators []string `json:"decorators"`
+	NestedIn   string   `json:"nested_in"`
 }
 
 // Method represents a class method (alias for Function with IsMethod=true)
@@ -19,11 +22,12 @@ type Method = Function
 
 // Class represents a class definition
 type Class struct {
-	Name       string   `json:"name"`
-	Bases      []string `json:"bases"`
-	Docstring  string   `json:"docstring"`
-	Methods    []Method `json:"methods"`
-	LineNumber int      `json:"line_number"`
+	Name          string   `json:"name"`
+	QualifiedName string   `json:"qualified_name"`
+	Bases         []string `json:"bases"`
+	Docstring     string   `json:"docstring"`
+	Methods       []Method `json:"methods"`
+	LineNumber    int      `json:"line_number"`
 }
 
 // Interface represents an interface definition (e.g., Go interfaces, TypeScript interfaces)
@@ -109,6 +113,18 @@ type ModuleInfo struct {
 	Structs    []Struct    `json:"structs,omitempty"`
 }
 
+// CompactModuleInfo is a compact representation of module information
+// matching Python's to_compact() format
+type CompactModuleInfo struct {
+	File      string                            `json:"file"`
+	Lang      string                            `json:"lang"`
+	Doc       string                            `json:"doc,omitempty"`
+	Imports   []string                          `json:"imports,omitempty"`
+	Classes   map[string]map[string]interface{} `json:"classes,omitempty"`
+	Functions []string                          `json:"functions,omitempty"`
+	Calls     map[string][]string               `json:"calls,omitempty"`
+}
+
 // EmbeddingUnit combines L1 (local) and L2 (cross-file) context data
 type EmbeddingUnit struct {
 	L1Data ModuleInfo      `json:"l1_data"`
@@ -127,4 +143,87 @@ type Config struct {
 	ContextThreshold    float64 `json:"context_threshold"`
 	// Max tokens for context
 	MaxContextTokens int `json:"max_context_tokens"`
+}
+
+// MaxDocstringLength is the maximum length for truncated docstrings
+const MaxDocstringLength = 200
+
+// ToCompact converts ModuleInfo to CompactModuleInfo format
+// Truncates docstrings to 200 chars and converts functions to signatures only
+func (m ModuleInfo) ToCompact() CompactModuleInfo {
+	// Truncate docstring to 200 chars
+	doc := m.Docstring
+	if len(doc) > MaxDocstringLength {
+		doc = doc[:MaxDocstringLength]
+	}
+
+	// Convert imports to string slice
+	imports := make([]string, 0, len(m.Imports))
+	for _, imp := range m.Imports {
+		if imp.IsFrom {
+			for _, name := range imp.Names {
+				imports = append(imports, fmt.Sprintf("from %s import %s", imp.Module, name))
+			}
+		} else {
+			imports = append(imports, fmt.Sprintf("import %s", imp.Module))
+		}
+	}
+
+	// Convert functions to signature strings
+	funcs := make([]string, 0, len(m.Functions))
+	for _, fn := range m.Functions {
+		sig := fn.Name + "(" + fn.Params + ")"
+		if fn.ReturnType != "" {
+			sig += " -> " + fn.ReturnType
+		}
+		funcs = append(funcs, sig)
+	}
+
+	// Convert classes to map format
+	classes := make(map[string]map[string]interface{}, len(m.Classes))
+	for _, cls := range m.Classes {
+		classMap := make(map[string]interface{})
+		// Truncate class docstring
+		if cls.Docstring != "" {
+			classMap["doc"] = truncateToLen(cls.Docstring, MaxDocstringLength)
+		}
+		// Convert methods to signatures
+		methods := make([]string, 0, len(cls.Methods))
+		for _, method := range cls.Methods {
+			methodSig := method.Name + "(" + method.Params + ")"
+			if method.ReturnType != "" {
+				methodSig += " -> " + method.ReturnType
+			}
+			methods = append(methods, methodSig)
+		}
+		if len(methods) > 0 {
+			classMap["methods"] = methods
+		}
+		classes[cls.Name] = classMap
+	}
+
+	// Convert call graph edges to calls map
+	calls := make(map[string][]string, len(m.CallGraph.Edges))
+	for _, edge := range m.CallGraph.Edges {
+		caller := edge.SourceFunc
+		calls[caller] = append(calls[caller], edge.DestFunc)
+	}
+
+	return CompactModuleInfo{
+		File:      m.Path,
+		Lang:      m.Language,
+		Doc:       doc,
+		Imports:   imports,
+		Classes:   classes,
+		Functions: funcs,
+		Calls:     calls,
+	}
+}
+
+// truncateToLen truncates a string to the specified length
+func truncateToLen(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen]
 }

@@ -685,3 +685,178 @@ type CallGraphStats struct {
 	CrossFileEdges  int
 	UnresolvedCalls int
 }
+
+// PythonImportResolver resolves Python import statements to their canonical forms.
+// It handles:
+//   - from X import Y → resolves to X.Y
+//   - import X → resolves to X
+//   - import X as Y → Y maps to X
+//   - Relative imports (.module, ..module, etc.)
+type PythonImportResolver struct {
+	rootDir string
+}
+
+// ResolvedImport represents a fully resolved Python import.
+type ResolvedImport struct {
+	// CanonicalName is the fully qualified module name (e.g., "os.path", "pkg.utils")
+	CanonicalName string
+	// LocalName is the name used in the source file (may be an alias)
+	LocalName string
+	// OriginalName is the original imported name (for from imports)
+	OriginalName string
+	// IsFrom indicates if this was a "from X import Y" style import
+	IsFrom bool
+	// IsRelative indicates if this is a relative import
+	IsRelative bool
+	// RelativeLevel is the number of dots for relative imports (1 for ., 2 for ..)
+	RelativeLevel int
+}
+
+// NewPythonImportResolver creates a new Python import resolver.
+func NewPythonImportResolver(rootDir string) *PythonImportResolver {
+	return &PythonImportResolver{
+		rootDir: rootDir,
+	}
+}
+
+// Resolve resolves a single import statement to its canonical form.
+// It handles regular imports, aliased imports, from imports, and relative imports.
+func (r *PythonImportResolver) Resolve(imp types.Import, fromFile string) (*ResolvedImport, error) {
+	resolved := &ResolvedImport{
+		IsFrom:        imp.IsFrom,
+		IsRelative:    extractor.IsRelativeImport(imp.Module),
+		RelativeLevel: extractor.GetRelativeLevel(imp.Module),
+	}
+
+	module := imp.Module
+	if resolved.IsRelative {
+		absoluteModule, err := r.resolveRelativeModule(imp.Module, fromFile)
+		if err != nil {
+			return nil, fmt.Errorf("resolving relative import: %w", err)
+		}
+		module = absoluteModule
+	}
+
+	if imp.IsFrom {
+		if len(imp.Names) > 0 {
+			name := imp.Names[0]
+			resolved.LocalName = name
+			resolved.OriginalName = name
+			resolved.CanonicalName = module + "." + name
+		}
+	} else {
+		if len(imp.Names) > 0 {
+			resolved.LocalName = imp.Names[0]
+			resolved.OriginalName = imp.Names[0]
+			resolved.CanonicalName = module
+		}
+	}
+
+	return resolved, nil
+}
+
+// ResolveAll resolves all imports from a file and returns a mapping.
+// Returns a map of local name → canonical name.
+func (r *PythonImportResolver) ResolveAll(imports []types.Import, fromFile string) (map[string]string, error) {
+	result := make(map[string]string)
+
+	for _, imp := range imports {
+		resolved, err := r.Resolve(imp, fromFile)
+		if err != nil {
+			continue
+		}
+
+		if imp.IsFrom {
+			for _, name := range imp.Names {
+				if name == "*" {
+					continue
+				}
+				canonical := imp.Module + "." + name
+				if resolved.IsRelative {
+					absModule, _ := r.resolveRelativeModule(imp.Module, fromFile)
+					canonical = absModule + "." + name
+				}
+				result[name] = canonical
+			}
+		} else {
+			for _, name := range imp.Names {
+				result[name] = imp.Module
+			}
+		}
+	}
+
+	return result, nil
+}
+
+// resolveRelativeModule converts a relative import to an absolute module path.
+// Examples:
+//   - "." from "pkg/utils.py" → "pkg"
+//   - ".helpers" from "pkg/utils.py" → "pkg.helpers"
+//   - ".." from "pkg/sub/mod.py" → "pkg"
+//   - "..utils" from "pkg/sub/mod.py" → "pkg.utils"
+func (r *PythonImportResolver) resolveRelativeModule(module string, fromFile string) (string, error) {
+	fromDir := filepath.Dir(fromFile)
+	relDir, err := filepath.Rel(r.rootDir, fromDir)
+	if err != nil {
+		return "", fmt.Errorf("getting relative directory: %w", err)
+	}
+
+	relDir = filepath.ToSlash(relDir)
+	if relDir == "." {
+		relDir = ""
+	}
+
+	level := 0
+	for i, ch := range module {
+		if ch == '.' {
+			level++
+		} else {
+			module = module[i:]
+			break
+		}
+		if i == len(module)-1 {
+			module = ""
+		}
+	}
+
+	parts := strings.Split(relDir, "/")
+	if len(parts) < level {
+		return "", fmt.Errorf("relative import goes beyond package root: %s from %s", module, fromFile)
+	}
+
+	if level > 0 && len(parts) >= level-1 {
+		parts = parts[:len(parts)-(level-1)]
+	}
+
+	if module != "" {
+		parts = append(parts, module)
+	}
+
+	result := strings.Join(parts, ".")
+	return result, nil
+}
+
+// LookupCanonicalName looks up the canonical name for a local name in the import map.
+// Returns the canonical name and true if found, or empty string and false.
+func (r *PythonImportResolver) LookupCanonicalName(importMap map[string]string, localName string) (string, bool) {
+	if canonical, ok := importMap[localName]; ok {
+		return canonical, true
+	}
+	return "", false
+}
+
+// ResolveQualifiedName resolves a potentially qualified name (e.g., "os.path.join")
+// using the import map. Returns the canonical qualified name.
+func (r *PythonImportResolver) ResolveQualifiedName(importMap map[string]string, qualifiedName string) string {
+	parts := strings.Split(qualifiedName, ".")
+	if len(parts) == 0 {
+		return qualifiedName
+	}
+
+	if canonical, ok := importMap[parts[0]]; ok {
+		parts[0] = canonical
+		return strings.Join(parts, ".")
+	}
+
+	return qualifiedName
+}

@@ -396,13 +396,13 @@ func TestPythonExtractorEdgeCases(t *testing.T) {
 			expected: 0,
 		},
 		{
-			name: "nested_functions_not_toplevel",
+			name: "nested_functions_extracted",
 			code: `def outer():
     def inner():
         pass
     return inner
 `,
-			expected: 1, // only outer should be extracted
+			expected: 2, // both outer and inner should be extracted
 		},
 		{
 			name:     "lambda_not_extracted",
@@ -465,6 +465,97 @@ class Greeter:
 	}
 }
 
+// TestNestedFunctionExtraction tests that nested functions are properly extracted
+// with their NestedIn field set to the parent function name.
+func TestNestedFunctionExtraction(t *testing.T) {
+	code := `def outer():
+    def inner():
+        pass
+    return inner`
+
+	extractor := NewPythonExtractor().(*PythonExtractor)
+	info, err := extractor.ExtractFromBytes([]byte(code), "test.py")
+	if err != nil {
+		t.Fatalf("ExtractFromBytes() failed: %v", err)
+	}
+
+	// We should have 2 functions: outer and inner
+	if len(info.Functions) != 2 {
+		t.Fatalf("Expected 2 functions (outer and inner), got %d: %v", len(info.Functions), funcNames(info.Functions))
+	}
+
+	// Build a map of functions by name
+	funcMap := make(map[string]types.Function)
+	for _, fn := range info.Functions {
+		funcMap[fn.Name] = fn
+	}
+
+	// Check outer function - should have NestedIn=""
+	outer, ok := funcMap["outer"]
+	if !ok {
+		t.Fatal("outer function not found")
+	}
+	if outer.NestedIn != "" {
+		t.Errorf("outer function should have NestedIn='', got '%s'", outer.NestedIn)
+	}
+
+	// Check inner function - should have NestedIn="outer"
+	inner, ok := funcMap["inner"]
+	if !ok {
+		t.Fatal("inner function not found")
+	}
+	if inner.NestedIn != "outer" {
+		t.Errorf("inner function should have NestedIn='outer', got '%s'", inner.NestedIn)
+	}
+}
+
+// TestNestedFunctionExtractionDeep tests deeply nested functions
+func TestNestedFunctionExtractionDeep(t *testing.T) {
+	code := `def level1():
+    def level2():
+        def level3():
+            pass
+        return level3
+    return level2`
+
+	extractor := NewPythonExtractor().(*PythonExtractor)
+	info, err := extractor.ExtractFromBytes([]byte(code), "test.py")
+	if err != nil {
+		t.Fatalf("ExtractFromBytes() failed: %v", err)
+	}
+
+	// We should have 3 functions
+	if len(info.Functions) != 3 {
+		t.Fatalf("Expected 3 functions, got %d: %v", len(info.Functions), funcNames(info.Functions))
+	}
+
+	// Build a map of functions by name
+	funcMap := make(map[string]types.Function)
+	for _, fn := range info.Functions {
+		funcMap[fn.Name] = fn
+	}
+
+	// Check nesting hierarchy
+	if funcMap["level1"].NestedIn != "" {
+		t.Errorf("level1 should have NestedIn='', got '%s'", funcMap["level1"].NestedIn)
+	}
+	if funcMap["level2"].NestedIn != "level1" {
+		t.Errorf("level2 should have NestedIn='level1', got '%s'", funcMap["level2"].NestedIn)
+	}
+	if funcMap["level3"].NestedIn != "level2" {
+		t.Errorf("level3 should have NestedIn='level2', got '%s'", funcMap["level3"].NestedIn)
+	}
+}
+
+// Helper function to get function names for debugging
+func funcNames(functions []types.Function) []string {
+	names := make([]string, len(functions))
+	for i, fn := range functions {
+		names[i] = fn.Name
+	}
+	return names
+}
+
 // TestIsAsyncFunction tests the IsAsyncFunction helper
 func TestIsAsyncFunction(t *testing.T) {
 	tmpDir := t.TempDir()
@@ -525,4 +616,56 @@ async def async_func():
 	if !foundRegular {
 		t.Error("Did not find regular in AST")
 	}
+}
+
+// TestNestedClassExtraction tests that nested classes are properly extracted
+// with their QualifiedName field set to the parent class path.
+func TestNestedClassExtraction(t *testing.T) {
+	code := `class Outer:
+    class Inner:
+        pass`
+
+	extractor := NewPythonExtractor().(*PythonExtractor)
+	info, err := extractor.ExtractFromBytes([]byte(code), "test.py")
+	if err != nil {
+		t.Fatalf("ExtractFromBytes() failed: %v", err)
+	}
+
+	// We should have 2 classes: Outer and Inner
+	if len(info.Classes) != 2 {
+		t.Fatalf("Expected 2 classes (Outer and Inner), got %d: %v", len(info.Classes), classNames(info.Classes))
+	}
+
+	// Build a map of classes by name
+	classMap := make(map[string]types.Class)
+	for _, cls := range info.Classes {
+		classMap[cls.Name] = cls
+	}
+
+	// Check Outer class - should have QualifiedName=""
+	outer, ok := classMap["Outer"]
+	if !ok {
+		t.Fatal("Outer class not found")
+	}
+	if outer.QualifiedName != "" {
+		t.Errorf("Outer class should have QualifiedName='', got '%s'", outer.QualifiedName)
+	}
+
+	// Check Inner class - should have QualifiedName="Outer.Inner"
+	inner, ok := classMap["Inner"]
+	if !ok {
+		t.Fatal("Inner class not found")
+	}
+	if inner.QualifiedName != "Outer.Inner" {
+		t.Errorf("Inner class should have QualifiedName='Outer.Inner', got '%s'", inner.QualifiedName)
+	}
+}
+
+// Helper function to get class names for debugging
+func classNames(classes []types.Class) []string {
+	names := make([]string, len(classes))
+	for i, cls := range classes {
+		names[i] = cls.Name
+	}
+	return names
 }

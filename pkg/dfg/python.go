@@ -11,19 +11,54 @@ import (
 	"github.com/l3aro/go-context-query/pkg/cfg"
 )
 
+// scopeStack tracks variable definitions at each scope level.
+// Each element is a set of variable names defined in that scope.
+type scopeStack []map[string]bool
+
+// isDefined checks if a variable is defined in any scope (local first, then outer).
+func (s scopeStack) isDefined(name string) bool {
+	for i := len(s) - 1; i >= 0; i-- {
+		if s[i][name] {
+			return true
+		}
+	}
+	return false
+}
+
+// addDefinition adds a variable definition to the current (innermost) scope.
+func (s *scopeStack) addDefinition(name string) {
+	if len(*s) > 0 {
+		(*s)[len(*s)-1][name] = true
+	}
+}
+
+// push creates a new scope level.
+func (s *scopeStack) push() {
+	*s = append(*s, make(map[string]bool))
+}
+
+// pop removes the current scope level.
+func (s *scopeStack) pop() {
+	if len(*s) > 0 {
+		*s = (*s)[:len(*s)-1]
+	}
+}
+
 type pythonDefUseVisitor struct {
-	content   []byte
-	funcName  string
-	refs      []VarRef
-	variables map[string][]VarRef
+	content    []byte
+	funcName   string
+	refs       []VarRef
+	variables  map[string][]VarRef
+	scopeStack scopeStack
 }
 
 func newPythonDefUseVisitor(content []byte, funcName string) *pythonDefUseVisitor {
 	return &pythonDefUseVisitor{
-		content:   content,
-		funcName:  funcName,
-		refs:      make([]VarRef, 0),
-		variables: make(map[string][]VarRef),
+		content:    content,
+		funcName:   funcName,
+		refs:       make([]VarRef, 0),
+		variables:  make(map[string][]VarRef),
+		scopeStack: scopeStack{make(map[string]bool)}, // Initialize with global scope
 	}
 }
 
@@ -148,6 +183,7 @@ func (v *pythonDefUseVisitor) extractParameters(funcNode *sitter.Node) {
 					Column:  int(child.StartPoint().Column) + 1,
 				}
 				v.addRef(ref)
+				v.scopeStack.addDefinition(name)
 			}
 			continue
 		}
@@ -172,6 +208,7 @@ func (v *pythonDefUseVisitor) extractParameters(funcNode *sitter.Node) {
 							Column:  int(identifier.StartPoint().Column) + 1,
 						}
 						v.addRef(ref)
+						v.scopeStack.addDefinition(name)
 					}
 				}
 			}
@@ -220,9 +257,18 @@ func (v *pythonDefUseVisitor) processNode(node *sitter.Node) {
 	case "try_statement":
 		v.processTryStatement(node)
 	case "function_definition":
-		v.extractParameters(node)
+		v.processNestedFunction(node)
 	case "block":
 		v.walkBlock(node)
+	case "lambda":
+		v.processLambda(node)
+	case "list_comprehension", "set_comprehension", "generator_expression":
+		v.processComprehension(node)
+	case "dictionary_comprehension":
+		v.processDictComprehension(node)
+	case "identifier":
+		// When we encounter an identifier not in an assignment context, it's a use
+		v.extractUses(node)
 	default:
 		for i := 0; i < int(node.ChildCount()); i++ {
 			child := node.Child(i)
@@ -230,6 +276,24 @@ func (v *pythonDefUseVisitor) processNode(node *sitter.Node) {
 				v.processNode(child)
 			}
 		}
+	}
+}
+
+func (v *pythonDefUseVisitor) processNestedFunction(node *sitter.Node) {
+	if node == nil {
+		return
+	}
+
+	v.scopeStack.push()
+	defer v.scopeStack.pop()
+
+	// Extract parameters as definitions in the nested scope
+	v.extractParameters(node)
+
+	// Process function body to track any captured variables
+	blockNode := findBlock(node)
+	if blockNode != nil {
+		v.walkBlock(blockNode)
 	}
 }
 
@@ -355,7 +419,172 @@ func (v *pythonDefUseVisitor) extractExceptionVariable(handlerNode *sitter.Node)
 						Column:  int(identifier.StartPoint().Column) + 1,
 					}
 					v.addRef(ref)
+					v.scopeStack.addDefinition(name)
 				}
+			}
+		}
+	}
+}
+
+func (v *pythonDefUseVisitor) processLambda(node *sitter.Node) {
+	if node == nil {
+		return
+	}
+
+	v.scopeStack.push()
+	defer v.scopeStack.pop()
+
+	// Process children to extract parameters and body
+	// Lambda structure: 'lambda' [parameters] ':' body
+	for i := 0; i < int(node.ChildCount()); i++ {
+		child := node.Child(i)
+		if child == nil {
+			continue
+		}
+
+		childType := child.Type()
+		switch childType {
+		case "lambda":
+			// Skip the lambda keyword
+			continue
+		case ":":
+			// Skip the colon separator
+			continue
+		case "lambda_parameters":
+			// Extract lambda parameters as definitions
+			v.extractLambdaParameters(child)
+		default:
+			// Everything else is the body expression
+			v.processNode(child)
+		}
+	}
+}
+
+func (v *pythonDefUseVisitor) extractLambdaParameters(paramsNode *sitter.Node) {
+	if paramsNode == nil {
+		return
+	}
+
+	// Recursively find all identifiers in the parameters and mark as definitions
+	v.extractLambdaParamIdentifiers(paramsNode)
+}
+
+func (v *pythonDefUseVisitor) extractLambdaParamIdentifiers(node *sitter.Node) {
+	if node == nil {
+		return
+	}
+
+	if node.Type() == "identifier" {
+		name := nodeText(node, v.content)
+		if name != "" && !isBuiltin(name) {
+			ref := VarRef{
+				Name:    name,
+				RefType: RefTypeDefinition,
+				Line:    int(node.StartPoint().Row) + 1,
+				Column:  int(node.StartPoint().Column) + 1,
+			}
+			v.addRef(ref)
+			v.scopeStack.addDefinition(name)
+		}
+		return
+	}
+
+	// Recurse into children
+	for i := 0; i < int(node.ChildCount()); i++ {
+		child := node.Child(i)
+		if child != nil {
+			v.extractLambdaParamIdentifiers(child)
+		}
+	}
+}
+
+func (v *pythonDefUseVisitor) processComprehension(node *sitter.Node) {
+	if node == nil {
+		return
+	}
+
+	v.scopeStack.push()
+	defer v.scopeStack.pop()
+
+	// Process generators (for clauses) - targets are definitions in inner scope
+	for i := 0; i < int(node.ChildCount()); i++ {
+		child := node.Child(i)
+		if child == nil {
+			continue
+		}
+
+		switch child.Type() {
+		case "for_in_clause":
+			// Extract uses from iterable first
+			iterable := child.ChildByFieldName("right")
+			if iterable != nil {
+				v.extractUses(iterable)
+			}
+			// Extract definitions from target
+			target := child.ChildByFieldName("left")
+			if target != nil {
+				v.extractAssignmentTarget(target, RefTypeDefinition)
+			}
+			// Process conditions
+			for j := 0; j < int(child.ChildCount()); j++ {
+				condChild := child.Child(j)
+				if condChild != nil && condChild.Type() == "if_clause" {
+					v.extractUses(condChild)
+				}
+			}
+		case "if_clause":
+			v.extractUses(child)
+		default:
+			if child.Type() != "[" && child.Type() != "]" &&
+				child.Type() != "{" && child.Type() != "}" &&
+				child.Type() != "(" && child.Type() != ")" {
+				v.processNode(child)
+			}
+		}
+	}
+}
+
+func (v *pythonDefUseVisitor) processDictComprehension(node *sitter.Node) {
+	if node == nil {
+		return
+	}
+
+	v.scopeStack.push()
+	defer v.scopeStack.pop()
+
+	// Process generators (for clauses) - targets are definitions in inner scope
+	for i := 0; i < int(node.ChildCount()); i++ {
+		child := node.Child(i)
+		if child == nil {
+			continue
+		}
+
+		switch child.Type() {
+		case "for_in_clause":
+			// Extract uses from iterable first
+			iterable := child.ChildByFieldName("right")
+			if iterable != nil {
+				v.extractUses(iterable)
+			}
+			// Extract definitions from target
+			target := child.ChildByFieldName("left")
+			if target != nil {
+				v.extractAssignmentTarget(target, RefTypeDefinition)
+			}
+			// Process conditions
+			for j := 0; j < int(child.ChildCount()); j++ {
+				condChild := child.Child(j)
+				if condChild != nil && condChild.Type() == "if_clause" {
+					v.extractUses(condChild)
+				}
+			}
+		case "if_clause":
+			v.extractUses(child)
+		default:
+			if child.Type() != "[" && child.Type() != "]" &&
+				child.Type() != "{" && child.Type() != "}" &&
+				child.Type() != "(" && child.Type() != ")" {
+				v.processNode(child)
 			}
 		}
 	}
@@ -377,6 +606,10 @@ func (v *pythonDefUseVisitor) extractAssignmentTarget(node *sitter.Node, refType
 				Column:  int(node.StartPoint().Column) + 1,
 			}
 			v.addRef(ref)
+			// Track definition in current scope
+			if refType == RefTypeDefinition {
+				v.scopeStack.addDefinition(name)
+			}
 		}
 	case "attribute":
 		v.extractUses(node)
