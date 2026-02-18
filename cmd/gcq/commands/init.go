@@ -14,16 +14,46 @@ import (
 // initCmd represents the init command
 var initCmd = &cobra.Command{
 	Use:   "init",
-	Short: "Initialize gcq configuration interactively",
+	Short: "Initialize gcq configuration",
 	Long: `Guides you through setting up gcq configuration step by step.
-Creates a config file with warm model (for indexing) and search model settings.`,
+Creates a config file with warm model (for indexing) and search model settings.
+
+Use non-interactive mode with flags:
+  gcq init --warm-provider ollama --warm-model nomic-embed-text --location project
+
+For full flag list, run: gcq init --help`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return runInit()
+		return runInit(cmd)
 	},
 }
 
-func runInit() error {
-	// === SECTION 1: Warm Model ===
+func runInit(cmd *cobra.Command) error {
+	// Check if running in non-interactive mode (flags provided)
+	warmProviderFlag, _ := cmd.Flags().GetString("warm-provider")
+	warmModelFlag, _ := cmd.Flags().GetString("warm-model")
+	warmBaseURLFlag, _ := cmd.Flags().GetString("warm-base-url")
+	warmAPIKeyFlag, _ := cmd.Flags().GetString("warm-api-key")
+	searchProviderFlag, _ := cmd.Flags().GetString("search-provider")
+	searchModelFlag, _ := cmd.Flags().GetString("search-model")
+	searchBaseURLFlag, _ := cmd.Flags().GetString("search-base-url")
+	searchAPIKeyFlag, _ := cmd.Flags().GetString("search-api-key")
+	locationFlag, _ := cmd.Flags().GetString("location")
+	yesFlag, _ := cmd.Flags().GetBool("yes")
+	skipHealthCheck, _ := cmd.Flags().GetBool("skip-health-check")
+
+	// Determine if non-interactive mode (any config flag provided)
+	isNonInteractive := warmProviderFlag != "" || warmModelFlag != "" ||
+		searchProviderFlag != "" || searchModelFlag != "" || locationFlag != ""
+
+	if isNonInteractive {
+		return runInitNonInteractive(
+			warmProviderFlag, warmModelFlag, warmBaseURLFlag, warmAPIKeyFlag,
+			searchProviderFlag, searchModelFlag, searchBaseURLFlag, searchAPIKeyFlag,
+			locationFlag, yesFlag, skipHealthCheck,
+		)
+	}
+
+	// === INTERACTIVE MODE (original behavior) ===
 	warmProvider := ""
 	warmModel := ""
 	warmBaseURL := ""
@@ -414,6 +444,218 @@ func runInit() error {
 	return nil
 }
 
+func runInitNonInteractive(
+	warmProviderFlag, warmModelFlag, warmBaseURLFlag, warmAPIKeyFlag string,
+	searchProviderFlag, searchModelFlag, searchBaseURLFlag, searchAPIKeyFlag string,
+	locationFlag string, yesFlag, skipHealthCheck bool,
+) error {
+	warmProvider := warmProviderFlag
+	warmModel := warmModelFlag
+	warmBaseURL := warmBaseURLFlag
+	warmAPIKey := warmAPIKeyFlag
+
+	searchProvider := searchProviderFlag
+	searchModel := searchModelFlag
+	searchBaseURL := searchBaseURLFlag
+	searchAPIKey := searchAPIKeyFlag
+
+	location := locationFlag
+	if location == "" {
+		location = "project"
+	}
+
+	if warmProvider == "" {
+		return fmt.Errorf("--warm-provider is required in non-interactive mode")
+	}
+
+	if warmProvider != "ollama" && warmProvider != "huggingface" {
+		return fmt.Errorf("--warm-provider must be 'ollama' or 'huggingface', got: %s", warmProvider)
+	}
+
+	if warmProvider == "ollama" && warmBaseURL == "" {
+		warmBaseURL = "http://localhost:11434"
+	}
+
+	if warmProvider == "huggingface" && warmModel == "" {
+		warmModel = "google/embeddinggemma-300m"
+	}
+
+	if warmProvider == "ollama" && warmModel == "" {
+		warmModel = "nomic-embed-text"
+	}
+
+	if searchProvider != "" && searchProvider != "ollama" && searchProvider != "huggingface" {
+		return fmt.Errorf("--search-provider must be 'ollama' or 'huggingface', got: %s", searchProvider)
+	}
+
+	if searchProvider == "" {
+		searchProvider = warmProvider
+		if searchModelFlag != "" {
+			searchModel = searchModelFlag
+		} else {
+			searchModel = warmModel
+		}
+		if searchBaseURLFlag != "" {
+			searchBaseURL = searchBaseURLFlag
+		} else {
+			searchBaseURL = warmBaseURL
+		}
+		if searchAPIKeyFlag != "" {
+			searchAPIKey = searchAPIKeyFlag
+		} else {
+			searchAPIKey = warmAPIKey
+		}
+	} else {
+		if searchModel == "" {
+			if searchProvider == "huggingface" {
+				searchModel = warmModel
+			} else {
+				searchModel = warmModel
+			}
+		}
+		if searchBaseURL == "" {
+			if searchProvider == "ollama" {
+				searchBaseURL = "http://localhost:11434"
+			}
+		}
+	}
+
+	var configPath string
+	if location == "global" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return fmt.Errorf("getting home directory: %w", err)
+		}
+		configPath = filepath.Join(home, ".gcq", "config.yaml")
+	} else {
+		configPath = ".gcq/config.yaml"
+	}
+
+	if _, err := os.Stat(configPath); err == nil && !yesFlag {
+		return fmt.Errorf("config file already exists at %s\nUse --yes to overwrite", configPath)
+	}
+
+	cfg := config.DefaultConfig()
+
+	cfg.WarmProvider = config.ProviderType(warmProvider)
+	if warmProvider == "huggingface" {
+		cfg.WarmHFModel = warmModel
+	} else if warmProvider == "ollama" {
+		cfg.WarmOllamaModel = warmModel
+		cfg.WarmOllamaBaseURL = warmBaseURL
+		if warmAPIKey != "" {
+			cfg.WarmOllamaAPIKey = warmAPIKey
+		}
+	}
+
+	cfg.SearchProvider = config.ProviderType(searchProvider)
+	if searchProvider == "huggingface" {
+		cfg.SearchHFModel = searchModel
+	} else if searchProvider == "ollama" {
+		cfg.SearchOllamaModel = searchModel
+		cfg.SearchOllamaBaseURL = searchBaseURL
+		if searchAPIKey != "" {
+			cfg.SearchOllamaAPIKey = searchAPIKey
+		}
+	}
+
+	if err := cfg.Validate(); err != nil {
+		return fmt.Errorf("config validation failed: %w", err)
+	}
+
+	fmt.Println("\n=== Configuration Preview ===")
+	fmt.Printf("Config path: %s\n", configPath)
+	fmt.Printf("Warm Provider: %s\n", cfg.WarmProvider)
+	if cfg.WarmProvider == config.ProviderHuggingFace {
+		fmt.Printf("Warm Model: %s\n", cfg.WarmHFModel)
+	} else {
+		fmt.Printf("Warm Model: %s\n", cfg.WarmOllamaModel)
+		fmt.Printf("Warm URL: %s\n", cfg.WarmOllamaBaseURL)
+	}
+
+	if searchProviderFlag != "" || searchModelFlag != "" {
+		fmt.Printf("Search Provider: %s\n", cfg.SearchProvider)
+		if cfg.SearchProvider == config.ProviderHuggingFace {
+			fmt.Printf("Search Model: %s\n", cfg.SearchHFModel)
+		} else {
+			fmt.Printf("Search Model: %s\n", cfg.SearchOllamaModel)
+			fmt.Printf("Search URL: %s\n", cfg.SearchOllamaBaseURL)
+		}
+	} else {
+		fmt.Println("Search Model: inherited from warm")
+	}
+	fmt.Println("================================")
+
+	if err := cfg.Save(configPath); err != nil {
+		return fmt.Errorf("saving config: %w", err)
+	}
+	fmt.Printf("Configuration saved to: %s\n", configPath)
+
+	if skipHealthCheck {
+		fmt.Println("\n=== Health check skipped ===")
+		return nil
+	}
+
+	fmt.Println("\n=== Running Health Check ===")
+
+	loadedCfg, err := config.LoadFromFile(configPath)
+	if err != nil {
+		return fmt.Errorf("loading saved config: %w", err)
+	}
+
+	result, err := healthcheck.Check(loadedCfg, configPath, configPath)
+	if err != nil {
+		return fmt.Errorf("health check failed: %w", err)
+	}
+
+	fmt.Printf("\nConfig Scope: %s\n", result.SavedScope)
+	if result.SavedScope == "global" {
+		fmt.Printf("Config Path: %s\n", configPath)
+	} else {
+		absPath, _ := filepath.Abs(configPath)
+		fmt.Printf("Config Path: %s\n", absPath)
+	}
+
+	fmt.Printf("\nWarm Model Status: %s\n", result.WarmModel.Status)
+	fmt.Printf("  Provider: %s\n", result.WarmModel.Provider)
+	fmt.Printf("  Model: %s\n", result.WarmModel.Model)
+	if result.WarmModel.URL != "" {
+		fmt.Printf("  URL: %s\n", result.WarmModel.URL)
+	}
+	if result.WarmModel.Error != "" {
+		fmt.Printf("  Error: %s\n", result.WarmModel.Error)
+	}
+
+	fmt.Printf("\nSearch Model Status: %s\n", result.SearchModel.Status)
+	if result.SearchModel.Status == "inherited" {
+		fmt.Println("  (inherited from warm model)")
+	} else {
+		fmt.Printf("  Provider: %s\n", result.SearchModel.Provider)
+		fmt.Printf("  Model: %s\n", result.SearchModel.Model)
+		if result.SearchModel.URL != "" {
+			fmt.Printf("  URL: %s\n", result.SearchModel.URL)
+		}
+		if result.SearchModel.Error != "" {
+			fmt.Printf("  Error: %s\n", result.SearchModel.Error)
+		}
+	}
+
+	fmt.Println("\n=== Initialization Complete ===")
+	return nil
+}
+
 func init() {
+	initCmd.Flags().String("warm-provider", "", "Warm provider: ollama or huggingface (required in non-interactive mode)")
+	initCmd.Flags().String("warm-model", "", "Warm model name (optional, has sensible defaults)")
+	initCmd.Flags().String("warm-base-url", "", "Ollama base URL (default: http://localhost:11434)")
+	initCmd.Flags().String("warm-api-key", "", "Ollama/HuggingFace API key (optional)")
+	initCmd.Flags().String("search-provider", "", "Search provider: ollama or huggingface (optional, defaults to warm)")
+	initCmd.Flags().String("search-model", "", "Search model name (optional, defaults to warm)")
+	initCmd.Flags().String("search-base-url", "", "Search base URL for Ollama (optional)")
+	initCmd.Flags().String("search-api-key", "", "Search API key (optional)")
+	initCmd.Flags().String("location", "", "Config location: global or project (default: project)")
+	initCmd.Flags().BoolP("yes", "y", false, "Skip all confirmations, overwrite if exists")
+	initCmd.Flags().Bool("skip-health-check", false, "Skip health check after initialization")
+
 	RootCmd.AddCommand(initCmd)
 }
