@@ -2,8 +2,316 @@ package embed
 
 import (
 	"errors"
+	"log"
 	"testing"
 )
+
+// mockDimensionedProvider implements DimensionedProvider for testing
+type mockDimensionedProvider struct {
+	dimension    int
+	dimensionErr error
+}
+
+func (m *mockDimensionedProvider) Embed(texts []string) ([][]float32, error) {
+	embeddings := make([][]float32, len(texts))
+	for i := range texts {
+		embeddings[i] = make([]float32, m.dimension)
+	}
+	return embeddings, nil
+}
+
+func (m *mockDimensionedProvider) Config() *Config {
+	return &Config{Model: "test-model", Dimensions: m.dimension}
+}
+
+func (m *mockDimensionedProvider) Dimension() (int, error) {
+	return m.dimension, m.dimensionErr
+}
+
+// mockNonDimensionedProvider implements Provider but not DimensionedProvider
+type mockNonDimensionedProvider struct{}
+
+func (m *mockNonDimensionedProvider) Embed(texts []string) ([][]float32, error) {
+	return [][]float32{{0.1, 0.2, 0.3}}, nil
+}
+
+func (m *mockNonDimensionedProvider) Config() *Config {
+	return &Config{Model: "test-model", Dimensions: 3}
+}
+
+// TestGetDimension tests the GetDimension function
+func TestGetDimension(t *testing.T) {
+	tests := []struct {
+		name        string
+		provider    Provider
+		wantDim     int
+		wantErr     bool
+		errContains string
+	}{
+		{
+			name:     "dimensioned provider returns dimension",
+			provider: &mockDimensionedProvider{dimension: 768},
+			wantDim:  768,
+			wantErr:  false,
+		},
+		{
+			name:        "dimensioned provider returns error",
+			provider:    &mockDimensionedProvider{dimension: 0, dimensionErr: errors.New("provider error")},
+			wantDim:     0,
+			wantErr:     true,
+			errContains: "provider error",
+		},
+		{
+			name:        "non-dimensioned provider returns error",
+			provider:    &mockNonDimensionedProvider{},
+			wantDim:     0,
+			wantErr:     true,
+			errContains: "does not support dimension reporting",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dim, err := GetDimension(tt.provider)
+			if tt.wantErr {
+				if err == nil {
+					t.Errorf("expected error, got nil")
+					return
+				}
+				if !contains(err.Error(), tt.errContains) {
+					t.Errorf("error = %v, want containing %v", err, tt.errContains)
+				}
+			} else {
+				if err != nil {
+					t.Errorf("unexpected error: %v", err)
+				}
+				if dim != tt.wantDim {
+					t.Errorf("dimension = %d, want %d", dim, tt.wantDim)
+				}
+			}
+		})
+	}
+}
+
+// TestCompatibleDimensions tests the CompatibleDimensions function
+func TestCompatibleDimensions(t *testing.T) {
+	tests := []struct {
+		name       string
+		provider1  Provider
+		provider2  Provider
+		wantCompat bool
+		wantDim    int
+		wantErr    bool
+	}{
+		{
+			name:       "both providers same dimension",
+			provider1:  &mockDimensionedProvider{dimension: 768},
+			provider2:  &mockDimensionedProvider{dimension: 768},
+			wantCompat: true,
+			wantDim:    768,
+			wantErr:    false,
+		},
+		{
+			name:       "both providers different dimensions",
+			provider1:  &mockDimensionedProvider{dimension: 768},
+			provider2:  &mockDimensionedProvider{dimension: 384},
+			wantCompat: false,
+			wantDim:    0,
+			wantErr:    true,
+		},
+		{
+			name:       "neither provider supports dimension reporting",
+			provider1:  &mockNonDimensionedProvider{},
+			provider2:  &mockNonDimensionedProvider{},
+			wantCompat: true,
+			wantDim:    0,
+			wantErr:    false,
+		},
+		{
+			name:       "only provider1 supports dimension reporting",
+			provider1:  &mockDimensionedProvider{dimension: 512},
+			provider2:  &mockNonDimensionedProvider{},
+			wantCompat: true,
+			wantDim:    512,
+			wantErr:    false,
+		},
+		{
+			name:       "only provider2 supports dimension reporting",
+			provider1:  &mockNonDimensionedProvider{},
+			provider2:  &mockDimensionedProvider{dimension: 256},
+			wantCompat: true,
+			wantDim:    256,
+			wantErr:    false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			compat, dim, err := CompatibleDimensions(tt.provider1, tt.provider2)
+			if tt.wantErr {
+				if err == nil {
+					t.Errorf("expected error, got nil")
+					return
+				}
+				if !errors.Is(err, ErrDimensionMismatch) {
+					t.Errorf("expected ErrDimensionMismatch, got %v", err)
+				}
+			} else {
+				if err != nil {
+					t.Errorf("unexpected error: %v", err)
+				}
+			}
+			if compat != tt.wantCompat {
+				t.Errorf("compatible = %v, want %v", compat, tt.wantCompat)
+			}
+			if dim != tt.wantDim {
+				t.Errorf("dimension = %d, want %d", dim, tt.wantDim)
+			}
+		})
+	}
+}
+
+// TestValidateSearchCompatibility tests the ValidateSearchCompatibility function
+func TestValidateSearchCompatibility(t *testing.T) {
+	tests := []struct {
+		name           string
+		indexDim       int
+		searchProvider Provider
+		wantErr        bool
+		errContains    string
+	}{
+		{
+			name:           "matching dimensions",
+			indexDim:       768,
+			searchProvider: &mockDimensionedProvider{dimension: 768},
+			wantErr:        false,
+		},
+		{
+			name:           "mismatching dimensions returns error",
+			indexDim:       768,
+			searchProvider: &mockDimensionedProvider{dimension: 384},
+			wantErr:        true,
+			errContains:    "dimension mismatch",
+		},
+		{
+			name:           "search provider doesn't support dimensions",
+			indexDim:       768,
+			searchProvider: &mockNonDimensionedProvider{},
+			wantErr:        true,
+			errContains:    "cannot determine search provider dimension",
+		},
+		{
+			name:           "zero index dimension with matching provider",
+			indexDim:       0,
+			searchProvider: &mockDimensionedProvider{dimension: 512},
+			wantErr:        true,
+			errContains:    "dimension mismatch",
+		},
+		{
+			name:           "zero index dimension with non-dimensioned provider",
+			indexDim:       0,
+			searchProvider: &mockNonDimensionedProvider{},
+			wantErr:        true,
+			errContains:    "cannot determine search provider dimension",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateSearchCompatibility(tt.indexDim, tt.searchProvider)
+			if tt.wantErr {
+				if err == nil {
+					t.Errorf("expected error, got nil")
+					return
+				}
+				if !contains(err.Error(), tt.errContains) {
+					t.Errorf("error = %v, want containing %v", err, tt.errContains)
+				}
+			} else {
+				if err != nil {
+					t.Errorf("unexpected error: %v", err)
+				}
+			}
+		})
+	}
+}
+
+// TestWarnDimensionMismatch tests the WarnDimensionMismatch function
+func TestWarnDimensionMismatch(t *testing.T) {
+	tests := []struct {
+		name           string
+		indexDim       int
+		searchProvider Provider
+		wantWarn       bool
+		warnContains   string
+	}{
+		{
+			name:           "matching dimensions - no warning",
+			indexDim:       768,
+			searchProvider: &mockDimensionedProvider{dimension: 768},
+			wantWarn:       false,
+		},
+		{
+			name:           "mismatching dimensions - warning logged",
+			indexDim:       768,
+			searchProvider: &mockDimensionedProvider{dimension: 384},
+			wantWarn:       true,
+			warnContains:   "dimension mismatch",
+		},
+		{
+			name:           "non-dimensioned provider - warning about cannot determine",
+			indexDim:       768,
+			searchProvider: &mockNonDimensionedProvider{},
+			wantWarn:       true,
+			warnContains:   "cannot determine",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Capture log output
+			var logOutput string
+			log.SetOutput(&logWriter{&logOutput})
+			defer log.SetOutput(nil)
+
+			WarnDimensionMismatch(tt.indexDim, tt.searchProvider)
+
+			if tt.wantWarn {
+				if !contains(logOutput, tt.warnContains) {
+					t.Errorf("expected log to contain %v, got %v", tt.warnContains, logOutput)
+				}
+			} else {
+				if logOutput != "" {
+					t.Errorf("expected no log output, got %v", logOutput)
+				}
+			}
+		})
+	}
+}
+
+// logWriter captures log output for testing
+type logWriter struct {
+	output *string
+}
+
+func (lw *logWriter) Write(p []byte) (n int, err error) {
+	*lw.output += string(p)
+	return len(p), nil
+}
+
+// contains is a simple substring check
+func contains(s, substr string) bool {
+	return len(s) >= len(substr) && (s == substr || len(s) > 0 && containsAt(s, substr))
+}
+
+func containsAt(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
+}
 
 // TestErrorVariables tests the exported error variables
 func TestErrorVariables(t *testing.T) {

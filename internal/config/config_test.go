@@ -324,7 +324,7 @@ ollama_model: test
 ollama_base_url: http://localhost:11434
 `,
 			wantErr:     true,
-			errContains: "invalid provider",
+			errContains: "invalid warm_provider",
 		},
 	}
 

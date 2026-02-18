@@ -1050,3 +1050,452 @@ func Hello() string {
 		t.Logf("Metadata: model=%s, count=%d", metadata.Model, metadata.Count)
 	}
 }
+
+// mockWarmProvider is a mock provider that identifies itself as warm provider
+type mockWarmProvider struct {
+	*mockProvider
+}
+
+func (m *mockWarmProvider) Config() *embed.Config {
+	return &embed.Config{
+		Model:      "warm-model",
+		Endpoint:   "http://warm:8080",
+		Dimensions: 3,
+	}
+}
+
+// mockSearchProvider is a mock provider that identifies itself as search provider
+type mockSearchProvider struct {
+	*mockProvider
+}
+
+func (m *mockSearchProvider) Config() *embed.Config {
+	return &embed.Config{
+		Model:      "search-model",
+		Endpoint:   "http://search:8080",
+		Dimensions: 3,
+	}
+}
+
+// TestNewBuilderWithProviders tests creating a builder with separate warm and search providers
+func TestNewBuilderWithProviders(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	warmProvider := &mockWarmProvider{mockProvider: &mockProvider{}}
+	searchProvider := &mockSearchProvider{mockProvider: &mockProvider{}}
+
+	builder, err := NewBuilderWithProviders(tmpDir, warmProvider, searchProvider)
+	if err != nil {
+		t.Fatalf("NewBuilderWithProviders failed: %v", err)
+	}
+
+	if builder == nil {
+		t.Fatal("Builder should not be nil")
+	}
+
+	// Verify warm provider is set
+	if builder.embedProvider == nil {
+		t.Error("Warm provider should be set")
+	}
+
+	// Verify search provider is set
+	if builder.embedProviderSearch == nil {
+		t.Error("Search provider should be set")
+	}
+}
+
+// TestNewBuilderWithProvidersNilSearch tests NewBuilderWithProviders with nil search provider
+func TestNewBuilderWithProvidersNilSearch(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	warmProvider := &mockWarmProvider{mockProvider: &mockProvider{}}
+
+	// Should work with nil search provider (falls back to warm)
+	builder, err := NewBuilderWithProviders(tmpDir, warmProvider, nil)
+	if err != nil {
+		t.Fatalf("NewBuilderWithProviders with nil search provider failed: %v", err)
+	}
+
+	if builder.embedProvider == nil {
+		t.Error("Warm provider should be set")
+	}
+
+	// embedProviderSearch should be nil when not provided
+	if builder.embedProviderSearch != nil {
+		t.Error("Search provider should be nil when not provided")
+	}
+}
+
+// TestBuilderDualProviderMetadata tests that metadata captures both providers correctly
+func TestBuilderDualProviderMetadata(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create a simple Python file
+	pyFile := filepath.Join(tmpDir, "test.py")
+	if err := os.WriteFile(pyFile, []byte("def hello():\n    pass\n"), 0644); err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+
+	warmProvider := &mockWarmProvider{mockProvider: &mockProvider{}}
+	searchProvider := &mockSearchProvider{mockProvider: &mockProvider{}}
+
+	builder, err := NewBuilderWithProviders(tmpDir, warmProvider, searchProvider)
+	if err != nil {
+		t.Fatalf("NewBuilderWithProviders failed: %v", err)
+	}
+
+	// Build the index
+	vecIndex, metadata, err := builder.Build()
+	if err != nil {
+		t.Fatalf("Build failed: %v", err)
+	}
+
+	if vecIndex == nil {
+		t.Fatal("Vector index should not be nil")
+	}
+
+	if metadata == nil {
+		t.Fatal("Metadata should not be nil")
+	}
+
+	// Verify warm provider is captured
+	if metadata.WarmProvider != "http://warm:8080" {
+		t.Errorf("Expected WarmProvider 'http://warm:8080', got '%s'", metadata.WarmProvider)
+	}
+	if metadata.WarmModel != "warm-model" {
+		t.Errorf("Expected WarmModel 'warm-model', got '%s'", metadata.WarmModel)
+	}
+
+	// Verify search provider is captured
+	if metadata.SearchProvider != "http://search:8080" {
+		t.Errorf("Expected SearchProvider 'http://search:8080', got '%s'", metadata.SearchProvider)
+	}
+	if metadata.SearchModel != "search-model" {
+		t.Errorf("Expected SearchModel 'search-model', got '%s'", metadata.SearchModel)
+	}
+
+	// Verify HasDualProvider returns true
+	if !metadata.HasDualProvider() {
+		t.Error("HasDualProvider should return true when both providers are set")
+	}
+}
+
+// TestBuilderDualProviderMetadataFallback tests metadata when search provider is nil
+func TestBuilderDualProviderMetadataFallback(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create a simple Python file
+	pyFile := filepath.Join(tmpDir, "test.py")
+	if err := os.WriteFile(pyFile, []byte("def hello():\n    pass\n"), 0644); err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+
+	warmProvider := &mockWarmProvider{mockProvider: &mockProvider{}}
+
+	// Use nil search provider
+	builder, err := NewBuilderWithProviders(tmpDir, warmProvider, nil)
+	if err != nil {
+		t.Fatalf("NewBuilderWithProviders failed: %v", err)
+	}
+
+	// Build the index
+	vecIndex, metadata, err := builder.Build()
+	if err != nil {
+		t.Fatalf("Build failed: %v", err)
+	}
+
+	if vecIndex == nil {
+		t.Fatal("Vector index should not be nil")
+	}
+
+	if metadata == nil {
+		t.Fatal("Metadata should not be nil")
+	}
+
+	// Verify warm provider is captured
+	if metadata.WarmProvider != "http://warm:8080" {
+		t.Errorf("Expected WarmProvider 'http://warm:8080', got '%s'", metadata.WarmProvider)
+	}
+
+	// Search provider should fall back to warm provider
+	if metadata.SearchProvider != "http://warm:8080" {
+		t.Errorf("Expected SearchProvider fallback to 'http://warm:8080', got '%s'", metadata.SearchProvider)
+	}
+
+	if !metadata.HasDualProvider() {
+		t.Log("HasDualProvider returns false when search provider is not explicitly set")
+	}
+}
+
+// TestBuilderProviderSwitching tests provider switching with GetActiveProvider
+func TestBuilderProviderSwitching(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	warmProvider := &mockWarmProvider{mockProvider: &mockProvider{}}
+	searchProvider := &mockSearchProvider{mockProvider: &mockProvider{}}
+
+	builder, err := NewBuilderWithProviders(tmpDir, warmProvider, searchProvider)
+	if err != nil {
+		t.Fatalf("NewBuilderWithProviders failed: %v", err)
+	}
+
+	// Test ProviderTypeWarm returns warm provider
+	warmActive := builder.GetActiveProvider(ProviderTypeWarm)
+	if warmActive == nil {
+		t.Error("GetActiveProvider(ProviderTypeWarm) should not return nil")
+	}
+	warmConfig := warmActive.Config()
+	if warmConfig.Model != "warm-model" {
+		t.Errorf("Expected warm provider model 'warm-model', got '%s'", warmConfig.Model)
+	}
+
+	// Test ProviderTypeSearch returns search provider
+	searchActive := builder.GetActiveProvider(ProviderTypeSearch)
+	if searchActive == nil {
+		t.Error("GetActiveProvider(ProviderTypeSearch) should not return nil")
+	}
+	searchConfig := searchActive.Config()
+	if searchConfig.Model != "search-model" {
+		t.Errorf("Expected search provider model 'search-model', got '%s'", searchConfig.Model)
+	}
+}
+
+// TestBuilderProviderSwitchingFallback tests provider switching when search provider is nil
+func TestBuilderProviderSwitchingFallback(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	warmProvider := &mockWarmProvider{mockProvider: &mockProvider{}}
+
+	builder, err := NewBuilderWithProviders(tmpDir, warmProvider, nil)
+	if err != nil {
+		t.Fatalf("NewBuilderWithProviders failed: %v", err)
+	}
+
+	// Test ProviderTypeSearch falls back to warm provider when search is nil
+	searchActive := builder.GetActiveProvider(ProviderTypeSearch)
+	if searchActive == nil {
+		t.Error("GetActiveProvider(ProviderTypeSearch) should not return nil")
+	}
+	searchConfig := searchActive.Config()
+	if searchConfig.Model != "warm-model" {
+		t.Errorf("Expected fallback to warm model 'warm-model', got '%s'", searchConfig.Model)
+	}
+}
+
+// TestBuilderEmbedWithProvider tests embedding with specific provider type
+func TestBuilderEmbedWithProvider(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	warmProvider := &mockWarmProvider{mockProvider: &mockProvider{}}
+	searchProvider := &mockSearchProvider{mockProvider: &mockProvider{}}
+
+	builder, err := NewBuilderWithProviders(tmpDir, warmProvider, searchProvider)
+	if err != nil {
+		t.Fatalf("NewBuilderWithProviders failed: %v", err)
+	}
+
+	units := []*CodeUnit{
+		{
+			Name:       "func1",
+			Type:       "function",
+			Signature:  "def func1()",
+			Docstring:  "First function",
+			FilePath:   "test.py",
+			LineNumber: 1,
+		},
+	}
+
+	// Test embedding with warm provider
+	warmEmbeddings, err := builder.EmbedWithProvider(units, ProviderTypeWarm)
+	if err != nil {
+		t.Fatalf("EmbedWithProvider(ProviderTypeWarm) failed: %v", err)
+	}
+	if len(warmEmbeddings) != 1 {
+		t.Errorf("Expected 1 embedding, got %d", len(warmEmbeddings))
+	}
+
+	// Test embedding with search provider
+	searchEmbeddings, err := builder.EmbedWithProvider(units, ProviderTypeSearch)
+	if err != nil {
+		t.Fatalf("EmbedWithProvider(ProviderTypeSearch) failed: %v", err)
+	}
+	if len(searchEmbeddings) != 1 {
+		t.Errorf("Expected 1 embedding, got %d", len(searchEmbeddings))
+	}
+}
+
+// TestBuilderWithSearchProvider tests the WithSearchProvider fluent builder method
+func TestBuilderWithSearchProvider(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	warmProvider := &mockWarmProvider{mockProvider: &mockProvider{}}
+	searchProvider := &mockSearchProvider{mockProvider: &mockProvider{}}
+
+	builder, err := NewBuilder(tmpDir, warmProvider)
+	if err != nil {
+		t.Fatalf("NewBuilder failed: %v", err)
+	}
+
+	// Use fluent method to set search provider
+	builder.WithSearchProvider(searchProvider)
+
+	// Verify search provider is set
+	if builder.embedProviderSearch == nil {
+		t.Error("Search provider should be set via WithSearchProvider")
+	}
+
+	// Test provider switching
+	searchActive := builder.GetActiveProvider(ProviderTypeSearch)
+	searchConfig := searchActive.Config()
+	if searchConfig.Model != "search-model" {
+		t.Errorf("Expected search model 'search-model', got '%s'", searchConfig.Model)
+	}
+}
+
+// TestIndexMetadataGetProvider tests the GetProvider helper method
+func TestIndexMetadataGetProvider(t *testing.T) {
+	tests := []struct {
+		name     string
+		metadata *IndexMetadata
+		expected string
+	}{
+		{
+			name: "search provider takes precedence",
+			metadata: &IndexMetadata{
+				Provider:       "legacy",
+				WarmProvider:   "warm",
+				SearchProvider: "search",
+			},
+			expected: "search",
+		},
+		{
+			name: "warm provider when no search",
+			metadata: &IndexMetadata{
+				Provider:     "legacy",
+				WarmProvider: "warm",
+			},
+			expected: "warm",
+		},
+		{
+			name: "legacy provider when no new fields",
+			metadata: &IndexMetadata{
+				Provider: "legacy",
+			},
+			expected: "legacy",
+		},
+		{
+			name:     "empty returns empty",
+			metadata: &IndexMetadata{},
+			expected: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := tt.metadata.GetProvider()
+			if result != tt.expected {
+				t.Errorf("GetProvider() = %q, want %q", result, tt.expected)
+			}
+		})
+	}
+}
+
+// TestIndexMetadataGetModel tests the GetModel helper method
+func TestIndexMetadataGetModel(t *testing.T) {
+	tests := []struct {
+		name     string
+		metadata *IndexMetadata
+		expected string
+	}{
+		{
+			name: "search model takes precedence",
+			metadata: &IndexMetadata{
+				Model:       "legacy-model",
+				WarmModel:   "warm-model",
+				SearchModel: "search-model",
+			},
+			expected: "search-model",
+		},
+		{
+			name: "warm model when no search",
+			metadata: &IndexMetadata{
+				Model:     "legacy-model",
+				WarmModel: "warm-model",
+			},
+			expected: "warm-model",
+		},
+		{
+			name: "legacy model when no new fields",
+			metadata: &IndexMetadata{
+				Model: "legacy-model",
+			},
+			expected: "legacy-model",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := tt.metadata.GetModel()
+			if result != tt.expected {
+				t.Errorf("GetModel() = %q, want %q", result, tt.expected)
+			}
+		})
+	}
+}
+
+// TestIndexMetadataIsCompatibleWith tests compatibility checking
+func TestIndexMetadataIsCompatibleWith(t *testing.T) {
+	metadata := &IndexMetadata{
+		WarmProvider:   "http://warm:8080",
+		WarmModel:      "warm-model",
+		SearchProvider: "http://search:8080",
+		SearchModel:    "search-model",
+	}
+
+	tests := []struct {
+		name       string
+		provider   string
+		model      string
+		compatible bool
+	}{
+		{
+			name:       "matches search provider",
+			provider:   "http://search:8080",
+			model:      "",
+			compatible: true,
+		},
+		{
+			name:       "matches search model",
+			provider:   "",
+			model:      "search-model",
+			compatible: true,
+		},
+		{
+			name:       "mismatched provider",
+			provider:   "http://other:8080",
+			model:      "",
+			compatible: false,
+		},
+		{
+			name:       "mismatched model",
+			provider:   "",
+			model:      "other-model",
+			compatible: false,
+		},
+		{
+			name:       "empty criteria always compatible",
+			provider:   "",
+			model:      "",
+			compatible: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := metadata.IsCompatibleWith(tt.provider, tt.model)
+			if result != tt.compatible {
+				t.Errorf("IsCompatibleWith(%q, %q) = %v, want %v", tt.provider, tt.model, result, tt.compatible)
+			}
+		})
+	}
+}

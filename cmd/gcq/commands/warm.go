@@ -140,44 +140,81 @@ func runWarmLocally(path string, cmd *cobra.Command, langFlag string, forceFlag 
 		return fmt.Errorf("loading config: %w", err)
 	}
 
-	// Get provider type
-	providerType, _ := cmd.Flags().GetString("provider")
-	modelName, _ := cmd.Flags().GetString("model")
+	// Get provider type - check warm-provider first, then fall back to provider for backward compat
+	warmProviderFlag, _ := cmd.Flags().GetString("warm-provider")
+	providerFlag, _ := cmd.Flags().GetString("provider")
+	warmModelFlag, _ := cmd.Flags().GetString("warm-model")
+	modelFlag, _ := cmd.Flags().GetString("model")
 
+	// Determine provider: warm-provider > provider > config.WarmProvider > config.Provider > default
+	providerType := warmProviderFlag
+	if providerType == "" {
+		providerType = providerFlag
+	}
+	if providerType == "" {
+		providerType = string(cfg.WarmProvider)
+	}
 	if providerType == "" {
 		providerType = string(cfg.Provider)
-		if providerType == "" {
-			providerType = "ollama"
-		}
+	}
+	if providerType == "" {
+		providerType = "ollama"
 	}
 
 	var provider embed.Provider
 
 	switch providerType {
 	case "ollama":
-		model := modelName
+		model := warmModelFlag
+		if model == "" {
+			model = modelFlag
+		}
+		if model == "" {
+			model = cfg.WarmOllamaModel
+		}
 		if model == "" {
 			model = cfg.OllamaModel
 		}
 		if model == "" {
 			model = "nomic-embed-text"
 		}
+		endpoint := cfg.WarmOllamaBaseURL
+		if endpoint == "" {
+			endpoint = cfg.OllamaBaseURL
+		}
+		apiKey := cfg.WarmOllamaAPIKey
+		if apiKey == "" {
+			apiKey = cfg.OllamaAPIKey
+		}
 		provider, err = embed.NewOllamaProvider(&embed.Config{
 			Model:    model,
-			Endpoint: cfg.OllamaBaseURL,
-			APIKey:   cfg.OllamaAPIKey,
+			Endpoint: endpoint,
+			APIKey:   apiKey,
 		})
 		if err != nil {
 			return fmt.Errorf("creating Ollama provider: %w", err)
 		}
 	case "huggingface":
-		model := modelName
+		model := warmModelFlag
+		if model == "" {
+			model = modelFlag
+		}
+		if model == "" {
+			model = cfg.WarmHFModel
+		}
 		if model == "" {
 			model = cfg.HFModel
 		}
+		if model == "" {
+			model = "sentence-transformers/all-MiniLM-L6-v2"
+		}
+		token := cfg.WarmHFToken
+		if token == "" {
+			token = cfg.HFToken
+		}
 		provider, err = embed.NewHuggingFaceProvider(&embed.Config{
 			Model:  model,
-			APIKey: cfg.HFToken,
+			APIKey: token,
 		})
 		if err != nil {
 			return fmt.Errorf("creating HuggingFace provider: %w", err)
@@ -289,8 +326,10 @@ func printWarmOutput(output WarmOutput, cmd *cobra.Command) {
 
 func init() {
 	warmCmd.Flags().BoolP("json", "j", false, "Output as JSON")
-	warmCmd.Flags().StringP("provider", "p", "", "Embedding provider (ollama or huggingface)")
-	warmCmd.Flags().StringP("model", "m", "", "Embedding model name")
+	warmCmd.Flags().StringP("provider", "p", "", "Embedding provider for backward compatibility (use --warm-provider for separate warm provider)")
+	warmCmd.Flags().StringP("model", "m", "", "Embedding model name for backward compatibility (use --warm-model for separate warm model)")
+	warmCmd.Flags().String("warm-provider", "", "Embedding provider for indexing (ollama or huggingface). Overrides --provider")
+	warmCmd.Flags().String("warm-model", "", "Embedding model name for indexing. Overrides --model")
 	warmCmd.Flags().StringP("language", "l", "", "Language to index (auto-detects all by default). Supported: python, go, typescript, javascript, java, rust, c, cpp, ruby, php, swift, kotlin, csharp")
 	warmCmd.Flags().BoolP("force", "f", false, "Force full rebuild, ignoring dirty tracking")
 }

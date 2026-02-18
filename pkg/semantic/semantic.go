@@ -110,16 +110,62 @@ func EmbeddingText(unit *CodeUnit) string {
 
 // IndexMetadata holds metadata about the semantic index
 type IndexMetadata struct {
-	// Model is the embedding model used
-	Model string `json:"model"`
+	// Model is the embedding model used (legacy field, use WarmModel/SearchModel)
+	Model string `json:"model,omitempty"`
 	// Timestamp is when the index was created
 	Timestamp time.Time `json:"timestamp"`
 	// Count is the number of code units indexed
 	Count int `json:"count"`
 	// Dimension is the embedding dimension
 	Dimension int `json:"dimension"`
-	// Provider is the embedding provider used
-	Provider string `json:"provider"`
+	// Provider is the embedding provider used (legacy field, use WarmProvider/SearchProvider)
+	Provider string `json:"provider,omitempty"`
+	// WarmProvider is the provider used for warm/indexing embeddings
+	WarmProvider string `json:"warmProvider,omitempty"`
+	// WarmModel is the model used for warm/indexing embeddings
+	WarmModel string `json:"warmModel,omitempty"`
+	// SearchProvider is the provider used for search embeddings
+	SearchProvider string `json:"searchProvider,omitempty"`
+	// SearchModel is the model used for search embeddings
+	SearchModel string `json:"searchModel,omitempty"`
+}
+
+// GetProvider returns the effective provider (searches new fields first, falls back to legacy)
+func (m *IndexMetadata) GetProvider() string {
+	if m.SearchProvider != "" {
+		return m.SearchProvider
+	}
+	if m.WarmProvider != "" {
+		return m.WarmProvider
+	}
+	return m.Provider
+}
+
+// GetModel returns the effective model (searches new fields first, falls back to legacy)
+func (m *IndexMetadata) GetModel() string {
+	if m.SearchModel != "" {
+		return m.SearchModel
+	}
+	if m.WarmModel != "" {
+		return m.WarmModel
+	}
+	return m.Model
+}
+
+// IsCompatibleWith checks if the metadata is compatible with the given provider and model
+func (m *IndexMetadata) IsCompatibleWith(provider, model string) bool {
+	if provider != "" && m.GetProvider() != provider {
+		return false
+	}
+	if model != "" && m.GetModel() != model {
+		return false
+	}
+	return true
+}
+
+// HasDualProvider returns true if both warm and search providers are configured
+func (m *IndexMetadata) HasDualProvider() bool {
+	return m.WarmProvider != "" && m.SearchProvider != ""
 }
 
 // Builder orchestrates the semantic indexing pipeline:
@@ -135,8 +181,11 @@ type Builder struct {
 	extractor *extractor.LanguageRegistry
 	// callGraphResolver resolves cross-file call graphs
 	callGraphResolver *callgraph.Resolver
-	// embedProvider generates embeddings
+	// embedProvider generates embeddings for warming/indexing (legacy: embedProvider)
 	embedProvider embed.Provider
+	// embedProviderSearch generates embeddings for search queries
+	// If nil, embedProvider is used for both warm and search
+	embedProviderSearch embed.Provider
 	// vectorIndex stores the vector index
 	vectorIndex *index.VectorIndex
 	// codeUnits stores the extracted code units
@@ -190,6 +239,42 @@ func NewBuilder(rootDir string, embedProvider embed.Provider) (*Builder, error) 
 	}
 
 	return builder, nil
+}
+
+// NewBuilderWithProviders creates a new semantic index builder with separate providers
+// for warm (indexing) and search operations. This enables using different embedding
+// models for building the index versus querying it.
+//
+// Parameters:
+//   - rootDir: The project root directory to index
+//   - warmProvider: Provider used for indexing/building the semantic index
+//   - searchProvider: Provider used for search queries (can be nil to use warmProvider)
+//
+// Example:
+//
+//	warmProvider, _ := embed.NewOllamaProvider(&embed.Config{Model: "nomic-embed-text"})
+//	searchProvider, _ := embed.NewHuggingFaceProvider(&embed.Config{Model: "sentence-transformers/all-MiniLM-L6-v2"})
+//	builder, err := NewBuilderWithProviders("./my-project", warmProvider, searchProvider)
+func NewBuilderWithProviders(rootDir string, warmProvider embed.Provider, searchProvider embed.Provider) (*Builder, error) {
+	// Start with the standard builder using warm provider
+	builder, err := NewBuilder(rootDir, warmProvider)
+	if err != nil {
+		return nil, err
+	}
+
+	// Set the search provider if provided
+	if searchProvider != nil {
+		builder.embedProviderSearch = searchProvider
+	}
+
+	return builder, nil
+}
+
+// WithSearchProvider sets the search provider for semantic search queries.
+// If not set, the warm provider (embedProvider) is used for both indexing and search.
+func (b *Builder) WithSearchProvider(provider embed.Provider) *Builder {
+	b.embedProviderSearch = provider
+	return b
 }
 
 // Scan scans the project for supported files
@@ -594,11 +679,48 @@ func formatClassSignature(cls types.Class) string {
 	return fmt.Sprintf("class %s", cls.Name)
 }
 
-// Embed generates embeddings for the code units
+// ProviderType specifies which provider to use for embedding
+type ProviderType string
+
+const (
+	// ProviderTypeWarm uses the warm/indexing provider
+	ProviderTypeWarm ProviderType = "warm"
+	// ProviderTypeSearch uses the search provider
+	ProviderTypeSearch ProviderType = "search"
+)
+
+// GetActiveProvider returns the appropriate provider based on the provider type.
+// Returns the warm provider for ProviderTypeWarm, or the search provider
+// (falling back to warm if search is not configured) for ProviderTypeSearch.
+func (b *Builder) GetActiveProvider(providerType ProviderType) embed.Provider {
+	switch providerType {
+	case ProviderTypeSearch:
+		if b.embedProviderSearch != nil {
+			return b.embedProviderSearch
+		}
+		return b.embedProvider
+	case ProviderTypeWarm:
+		fallthrough
+	default:
+		return b.embedProvider
+	}
+}
+
+// Embed generates embeddings for the code units using the warm provider.
+// This is the default embedding method that maintains backward compatibility.
 func (b *Builder) Embed(units []*CodeUnit) ([][]float32, error) {
+	return b.EmbedWithProvider(units, ProviderTypeWarm)
+}
+
+// EmbedWithProvider generates embeddings for the code units using the specified provider.
+// Use ProviderTypeWarm for indexing operations and ProviderTypeSearch for query operations.
+// If search provider is not configured, falls back to warm provider.
+func (b *Builder) EmbedWithProvider(units []*CodeUnit, providerType ProviderType) ([][]float32, error) {
 	if len(units) == 0 {
 		return nil, nil
 	}
+
+	provider := b.GetActiveProvider(providerType)
 
 	// Build embedding texts
 	texts := make([]string, len(units))
@@ -625,9 +747,9 @@ func (b *Builder) Embed(units []*CodeUnit) ([][]float32, error) {
 
 	// Generate embeddings for missing texts
 	if len(missingTexts) > 0 {
-		newEmbeddings, err := b.embedProvider.Embed(missingTexts)
+		newEmbeddings, err := provider.Embed(missingTexts)
 		if err != nil {
-			return nil, fmt.Errorf("generating embeddings: %w", err)
+			return nil, fmt.Errorf("generating embeddings with %s provider: %w", providerType, err)
 		}
 
 		// Store new embeddings in cache
@@ -659,12 +781,21 @@ func (b *Builder) Build() (*index.VectorIndex, *IndexMetadata, error) {
 	}
 
 	if len(units) == 0 {
-		return nil, &IndexMetadata{
-			Model:     b.embedProvider.Config().Model,
-			Timestamp: time.Now(),
-			Count:     0,
-			Provider:  b.embedProvider.Config().Endpoint,
-		}, nil
+		warmConfig := b.embedProvider.Config()
+		metadata := &IndexMetadata{
+			Timestamp:      time.Now(),
+			Count:          0,
+			WarmProvider:   warmConfig.Endpoint,
+			WarmModel:      warmConfig.Model,
+			SearchProvider: warmConfig.Endpoint,
+			SearchModel:    warmConfig.Model,
+		}
+		if b.embedProviderSearch != nil {
+			searchConfig := b.embedProviderSearch.Config()
+			metadata.SearchProvider = searchConfig.Endpoint
+			metadata.SearchModel = searchConfig.Model
+		}
+		return nil, metadata, nil
 	}
 
 	// Step 3: Embed
@@ -699,13 +830,23 @@ func (b *Builder) Build() (*index.VectorIndex, *IndexMetadata, error) {
 
 	b.vectorIndex = vecIndex
 
-	// Create metadata
+	// Create metadata with dual provider support
+	warmConfig := b.embedProvider.Config()
 	metadata := &IndexMetadata{
-		Model:     b.embedProvider.Config().Model,
-		Timestamp: time.Now(),
-		Count:     len(units),
-		Dimension: dimension,
-		Provider:  b.embedProvider.Config().Endpoint,
+		Timestamp:      time.Now(),
+		Count:          len(units),
+		Dimension:      dimension,
+		WarmProvider:   warmConfig.Endpoint,
+		WarmModel:      warmConfig.Model,
+		SearchProvider: warmConfig.Endpoint,
+		SearchModel:    warmConfig.Model,
+	}
+
+	// If search provider is explicitly set, use its config
+	if b.embedProviderSearch != nil {
+		searchConfig := b.embedProviderSearch.Config()
+		metadata.SearchProvider = searchConfig.Endpoint
+		metadata.SearchModel = searchConfig.Model
 	}
 
 	return vecIndex, metadata, nil
@@ -723,14 +864,24 @@ func (b *Builder) Save() error {
 		return fmt.Errorf("saving index: %w", err)
 	}
 
-	// Save metadata
+	// Save metadata with dual provider support
 	metadataPath := filepath.Join(b.cacheDir, "metadata.json")
+	warmConfig := b.embedProvider.Config()
 	metadata := IndexMetadata{
-		Model:     b.embedProvider.Config().Model,
-		Timestamp: time.Now(),
-		Count:     len(b.codeUnits),
-		Dimension: b.vectorIndex.Dimension(),
-		Provider:  b.embedProvider.Config().Endpoint,
+		Timestamp:      time.Now(),
+		Count:          len(b.codeUnits),
+		Dimension:      b.vectorIndex.Dimension(),
+		WarmProvider:   warmConfig.Endpoint,
+		WarmModel:      warmConfig.Model,
+		SearchProvider: warmConfig.Endpoint,
+		SearchModel:    warmConfig.Model,
+	}
+
+	// If search provider is explicitly set, use its config
+	if b.embedProviderSearch != nil {
+		searchConfig := b.embedProviderSearch.Config()
+		metadata.SearchProvider = searchConfig.Endpoint
+		metadata.SearchModel = searchConfig.Model
 	}
 
 	if err := saveMetadata(metadataPath, metadata); err != nil {

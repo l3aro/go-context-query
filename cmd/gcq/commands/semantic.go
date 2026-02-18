@@ -2,16 +2,17 @@ package commands
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 
-	"github.com/spf13/cobra"
 	"github.com/l3aro/go-context-query/internal/config"
 	"github.com/l3aro/go-context-query/internal/daemon"
 	"github.com/l3aro/go-context-query/pkg/embed"
 	"github.com/l3aro/go-context-query/pkg/search"
 	"github.com/l3aro/go-context-query/pkg/semantic"
+	"github.com/spf13/cobra"
 )
 
 // SemanticOutput represents the output of the semantic command
@@ -85,14 +86,28 @@ func runSemanticLocally(query string, cmd *cobra.Command) error {
 	}
 
 	// Get provider type and model
-	providerType, _ := cmd.Flags().GetString("provider")
-	modelName, _ := cmd.Flags().GetString("model")
+	// Priority: CLI flags > metadata > config > defaults
+	searchProviderFlag, _ := cmd.Flags().GetString("search-provider")
+	providerFlag, _ := cmd.Flags().GetString("provider")
+	searchModelFlag, _ := cmd.Flags().GetString("search-model")
+	modelFlag, _ := cmd.Flags().GetString("model")
 	k, _ := cmd.Flags().GetInt("k")
 
 	if k <= 0 {
 		k = 10
 	}
 
+	// Determine provider: search-provider flag > provider flag > metadata.SearchProvider > metadata.GetProvider() > config > default
+	providerType := searchProviderFlag
+	if providerType == "" {
+		providerType = providerFlag
+	}
+	if providerType == "" {
+		providerType = metadata.SearchProvider
+		if providerType == "" {
+			providerType = metadata.GetProvider()
+		}
+	}
 	if providerType == "" {
 		providerType = string(cfg.Provider)
 		if providerType == "" {
@@ -100,22 +115,30 @@ func runSemanticLocally(query string, cmd *cobra.Command) error {
 		}
 	}
 
+	// Determine model: search-model flag > model flag > metadata.SearchModel > metadata.GetModel() > config > default
+	modelName := searchModelFlag
+	if modelName == "" {
+		modelName = modelFlag
+	}
+	if modelName == "" {
+		modelName = metadata.SearchModel
+		if modelName == "" {
+			modelName = metadata.GetModel()
+		}
+	}
+	if modelName == "" {
+		modelName = cfg.OllamaModel
+		if modelName == "" {
+			modelName = "nomic-embed-text"
+		}
+	}
+
 	// Create the embedding provider
 	var provider embed.Provider
 	switch providerType {
 	case "ollama":
-		model := modelName
-		if model == "" {
-			model = metadata.Model
-			if model == "" {
-				model = cfg.OllamaModel
-			}
-			if model == "" {
-				model = "nomic-embed-text"
-			}
-		}
 		provider, err = embed.NewOllamaProvider(&embed.Config{
-			Model:    model,
+			Model:    modelName,
 			Endpoint: cfg.OllamaBaseURL,
 			APIKey:   cfg.OllamaAPIKey,
 		})
@@ -123,15 +146,8 @@ func runSemanticLocally(query string, cmd *cobra.Command) error {
 			return fmt.Errorf("creating Ollama provider: %w", err)
 		}
 	case "huggingface":
-		model := modelName
-		if model == "" {
-			model = metadata.Model
-			if model == "" {
-				model = cfg.HFModel
-			}
-		}
 		provider, err = embed.NewHuggingFaceProvider(&embed.Config{
-			Model:  model,
+			Model:  modelName,
 			APIKey: cfg.HFToken,
 		})
 		if err != nil {
@@ -139,6 +155,21 @@ func runSemanticLocally(query string, cmd *cobra.Command) error {
 		}
 	default:
 		return fmt.Errorf("unknown provider: %s (use 'ollama' or 'huggingface')", providerType)
+	}
+
+	// Check dimension compatibility between index and search provider
+	// This warns if dimensions differ but allows search to continue
+	if metadata.Dimension > 0 {
+		if err := embed.ValidateSearchCompatibility(metadata.Dimension, provider); err != nil {
+			if errors.Is(err, embed.ErrDimensionMismatch) {
+				// Dimensions differ but both can report - warn and continue
+				fmt.Fprintf(os.Stderr, "Warning: %v\n", err)
+				fmt.Fprintf(os.Stderr, "Search results may be degraded due to dimension mismatch.\n")
+			} else {
+				// Can't determine provider dimension - this is severe
+				return fmt.Errorf("dimension compatibility check failed: %w", err)
+			}
+		}
 	}
 
 	// Create searcher and perform search
@@ -216,7 +247,9 @@ func printSemantic(output SemanticOutput) {
 
 func init() {
 	semanticCmd.Flags().BoolP("json", "j", false, "Output as JSON")
-	semanticCmd.Flags().StringP("provider", "p", "", "Embedding provider (ollama or huggingface)")
-	semanticCmd.Flags().StringP("model", "m", "", "Embedding model name")
+	semanticCmd.Flags().StringP("provider", "p", "", "Embedding provider for backward compatibility (ollama or huggingface)")
+	semanticCmd.Flags().StringP("model", "m", "", "Embedding model name for backward compatibility")
+	semanticCmd.Flags().String("search-provider", "", "Search-specific embedding provider (ollama or huggingface)")
+	semanticCmd.Flags().String("search-model", "", "Search-specific embedding model name")
 	semanticCmd.Flags().IntP("k", "k", 10, "Number of results to return")
 }
