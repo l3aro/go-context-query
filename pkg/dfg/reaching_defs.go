@@ -20,6 +20,8 @@ type ReachingDefsAnalyzer struct {
 	defBlock map[int]string
 	// defVar maps definition ID to the variable name
 	defVar map[int]string
+	// blockLineIndex maps line number to block ID for O(1) block lookup
+	blockLineIndex map[int]string
 }
 
 // NewReachingDefsAnalyzer creates a new ReachingDefsAnalyzer.
@@ -95,6 +97,14 @@ func (r *ReachingDefsAnalyzer) initialize(cfgInfo *cfg.CFGInfo, refs []VarRef) {
 	r.blockKill = make(map[string]map[string]struct{})
 	r.defBlock = make(map[int]string)
 	r.defVar = make(map[int]string)
+	r.blockLineIndex = make(map[int]string)
+
+	// Build block line index for O(1) block lookup
+	for blockID, block := range cfgInfo.Blocks {
+		for line := block.StartLine; line <= block.EndLine; line++ {
+			r.blockLineIndex[line] = blockID
+		}
+	}
 
 	defID := 0
 
@@ -158,10 +168,8 @@ func (r *ReachingDefsAnalyzer) initialize(cfgInfo *cfg.CFGInfo, refs []VarRef) {
 
 // findBlockForLine finds the block containing the given line number.
 func (r *ReachingDefsAnalyzer) findBlockForLine(cfgInfo *cfg.CFGInfo, line int) string {
-	for blockID, block := range cfgInfo.Blocks {
-		if line >= block.StartLine && line <= block.EndLine {
-			return blockID
-		}
+	if blockID, ok := r.blockLineIndex[line]; ok {
+		return blockID
 	}
 	return ""
 }
