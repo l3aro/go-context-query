@@ -315,8 +315,12 @@ func runInit(cmd *cobra.Command) error {
 		}
 	}
 
-	// Set search settings only if user selected "no" for "same as warm"
-	if !useSameModel {
+	if useSameModel {
+		cfg.Search.Provider = cfg.Warm.Provider
+		cfg.Search.Model = cfg.Warm.Model
+		cfg.Search.BaseURL = cfg.Warm.BaseURL
+		cfg.Search.Token = cfg.Warm.Token
+	} else {
 		cfg.Search.Provider = config.ProviderType(searchProvider)
 		if searchProvider == "huggingface" {
 			cfg.Search.Model = searchModel
