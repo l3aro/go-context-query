@@ -652,3 +652,82 @@ func splitEnv(e string) []string {
 	}
 	return []string{e}
 }
+
+func TestConfigSave(t *testing.T) {
+	// Test saving config to a temp file
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.yaml")
+
+	cfg := &Config{
+		Provider:            ProviderOllama,
+		OllamaModel:         "test-model",
+		OllamaBaseURL:       "http://localhost:11434",
+		ThresholdSimilarity: 0.8,
+		MaxContextChunks:    15,
+		ChunkSize:           1024,
+		ChunkOverlap:        200,
+	}
+
+	// Test Save
+	err := cfg.Save(configPath)
+	if err != nil {
+		t.Fatalf("Save() failed: %v", err)
+	}
+
+	// Verify file exists
+	if _, err := os.Stat(configPath); os.IsNotExist(err) {
+		t.Fatalf("Config file was not created at %s", configPath)
+	}
+
+	// Verify roundtrip: load and compare
+	loadedCfg, err := LoadFromFile(configPath)
+	if err != nil {
+		t.Fatalf("LoadFromFile() failed: %v", err)
+	}
+
+	if loadedCfg.Provider != cfg.Provider {
+		t.Errorf("Provider mismatch: got %s, want %s", loadedCfg.Provider, cfg.Provider)
+	}
+	if loadedCfg.OllamaModel != cfg.OllamaModel {
+		t.Errorf("OllamaModel mismatch: got %s, want %s", loadedCfg.OllamaModel, cfg.OllamaModel)
+	}
+	if loadedCfg.OllamaBaseURL != cfg.OllamaBaseURL {
+		t.Errorf("OllamaBaseURL mismatch: got %s, want %s", loadedCfg.OllamaBaseURL, cfg.OllamaBaseURL)
+	}
+	if loadedCfg.ThresholdSimilarity != cfg.ThresholdSimilarity {
+		t.Errorf("ThresholdSimilarity mismatch: got %v, want %v", loadedCfg.ThresholdSimilarity, cfg.ThresholdSimilarity)
+	}
+	if loadedCfg.MaxContextChunks != cfg.MaxContextChunks {
+		t.Errorf("MaxContextChunks mismatch: got %d, want %d", loadedCfg.MaxContextChunks, cfg.MaxContextChunks)
+	}
+	if loadedCfg.ChunkSize != cfg.ChunkSize {
+		t.Errorf("ChunkSize mismatch: got %d, want %d", loadedCfg.ChunkSize, cfg.ChunkSize)
+	}
+	if loadedCfg.ChunkOverlap != cfg.ChunkOverlap {
+		t.Errorf("ChunkOverlap mismatch: got %d, want %d", loadedCfg.ChunkOverlap, cfg.ChunkOverlap)
+	}
+}
+
+func TestConfigSaveCreatesParentDirs(t *testing.T) {
+	// Test that Save creates parent directories if they don't exist
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "nested", "dirs", "config.yaml")
+
+	cfg := &Config{
+		Provider:         ProviderHuggingFace,
+		HFModel:          "test-model",
+		ChunkSize:        512,
+		ChunkOverlap:     100,
+		MaxContextChunks: 10,
+	}
+
+	err := cfg.Save(configPath)
+	if err != nil {
+		t.Fatalf("Save() failed to create parent dirs: %v", err)
+	}
+
+	// Verify file exists
+	if _, err := os.Stat(configPath); os.IsNotExist(err) {
+		t.Fatalf("Config file was not created at %s", configPath)
+	}
+}

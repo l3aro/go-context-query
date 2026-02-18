@@ -172,6 +172,29 @@ func LoadFromFile(path string) (*Config, error) {
 	return cfg, nil
 }
 
+// Save writes the configuration to the specified YAML file path.
+// It creates parent directories if they don't exist.
+func (c *Config) Save(path string) error {
+	// Create parent directories if they don't exist
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("failed to create directory %s: %w", dir, err)
+	}
+
+	// Marshal config to YAML
+	data, err := yaml.Marshal(c)
+	if err != nil {
+		return fmt.Errorf("failed to marshal config to YAML: %w", err)
+	}
+
+	// Write to file with 0644 permissions
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		return fmt.Errorf("failed to write config file %s: %w", path, err)
+	}
+
+	return nil
+}
+
 // applyEnvOverrides applies environment variable overrides to the config
 func applyEnvOverrides(cfg *Config) {
 	if v := os.Getenv("GCQ_PROVIDER"); v != "" {
