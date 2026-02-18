@@ -6,18 +6,60 @@ Welcome! This guide will help you get go-context-query up and running on your ma
 
 Before you begin, make sure you have:
 
-- **Go 1.21+** installed on your system
+- **Go 1.21+** installed on your system (only if building from source)
 
-## Quick Start
+## Download Standalone Binary
 
-### Step 1: Clone and Build
+### Step 1: Download
+
+Visit the [Releases](https://github.com/vectordotdev/go-context-query/releases) page and download the binary for your OS:
+
+| OS      | Architecture | Download                           |
+| ------- | ------------ | ----------------------------------|
+| Linux   | x64          | `gcq_Linux_x86_64.tar.gz`         |
+| Linux   | ARM64        | `gcq_Linux_arm64.tar.gz`          |
+| macOS   | x64          | `gcq_Darwin_x86_64.tar.gz`        |
+| macOS   | ARM64        | `gcq_Darwin_arm64.tar.gz`         |
+| Windows | x64          | `gcq_Windows_x86_64.zip`          |
+
+Or use curl:
 
 ```bash
-# Clone the repository
+# Example for Linux x64
+curl -sL https://github.com/vectordotdev/go-context-query/releases/latest/download/gcq_Linux_x86_64.tar.gz | tar xz
+
+# Example for macOS ARM64
+curl -sL https://github.com/vectordotdev/go-context-query/releases/latest/download/gcq_Darwin_arm64.tar.gz | tar xz
+```
+
+### Step 2: Make Executable (Linux/macOS)
+
+```bash
+chmod +x gcq
+```
+
+### Step 2: Move to PATH
+
+```bash
+# Create local bin directory
+mkdir -p ~/.local/bin
+
+# Move the binary
+mv gcq ~/.local/bin/
+
+# Add to your PATH (add this to your ~/.bashrc or ~/.zshrc)
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+---
+
+## Alternative: Build from Source
+
+If you have Go installed and want the latest development version:
+
+```bash
 git clone https://github.com/l3aro/go-context-query.git
 cd go-context-query
-
-# Build the binary
 make build
 ```
 

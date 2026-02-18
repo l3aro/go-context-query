@@ -2,7 +2,36 @@
 
 This guide provides direct, scriptable commands for automated installation.
 
-## Build from Source
+## Option 1: Download Standalone Binary
+
+```bash
+# Detect OS and arch, download latest release
+OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+ARCH=$(uname -m)
+case $ARCH in
+  x86_64) ARCH="x86_64" ;;
+  arm64|aarch64) ARCH="arm64" ;;
+esac
+
+curl -sL "https://github.com/vectordotdev/go-context-query/releases/latest/download/gcq_${OS}_${ARCH}.tar.gz" | tar xz
+
+chmod +x gcq
+
+# Setup binary location
+if [ ! -d "$HOME/.local/bin" ]; then
+    mkdir -p "$HOME/.local/bin"
+fi
+mv gcq "$HOME/.local/bin/"
+
+# Add to PATH if not already present
+if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
+    export PATH="$HOME/.local/bin:$PATH"
+fi
+```
+
+Binary path: `./gcq` (use this instead of `./bin/gcq` in examples below)
+
+## Option 2: Build from Source
 
 ```bash
 # Clone repository
@@ -20,14 +49,14 @@ Use CLI flags to configure without prompts:
 
 ```bash
 # Initialize config (non-interactive)
-./bin/gcq init \
+./gcq init \
   --warm-provider ollama \
   --warm-model nomic-embed-text \
   --location project \
   --skip-health-check
 
 # Or with custom Ollama URL
-./bin/gcq init \
+./gcq init \
   --warm-provider ollama \
   --warm-model nomic-embed-text \
   --warm-base-url http://localhost:11434 \
@@ -35,7 +64,7 @@ Use CLI flags to configure without prompts:
   --yes
 
 # Dual provider: Ollama for indexing, HuggingFace for search
-./bin/gcq init \
+./gcq init \
   --warm-provider ollama \
   --warm-model nomic-embed-text \
   --search-provider huggingface \
@@ -92,13 +121,13 @@ export GCQ_OLLAMA_BASE_URL=http://localhost:11434
 
 ```bash
 # Check doctor output
-./bin/gcq doctor
+./gcq doctor
 
 # Test indexing
-./bin/gcq warm ./path/to/project
+./gcq warm ./path/to/project
 
 # Test search
-./bin/gcq semantic "find auth function"
+./gcq semantic "find auth function"
 ```
 
 ## Common Configurations
@@ -106,13 +135,13 @@ export GCQ_OLLAMA_BASE_URL=http://localhost:11434
 ### Local Ollama Only
 
 ```bash
-./bin/gcq init --warm-provider ollama --location project --skip-health-check
+./gcq init --warm-provider ollama --location project --skip-health-check
 ```
 
 ### Dual Provider (Ollama + HuggingFace)
 
 ```bash
-./bin/gcq init \
+./gcq init \
   --warm-provider ollama \
   --warm-model nomic-embed-text \
   --search-provider huggingface \
@@ -124,5 +153,5 @@ export GCQ_OLLAMA_BASE_URL=http://localhost:11434
 ### Global Config
 
 ```bash
-./bin/gcq init --warm-provider ollama --location global --skip-health-check
+./gcq init --warm-provider ollama --location global --skip-health-check
 ```

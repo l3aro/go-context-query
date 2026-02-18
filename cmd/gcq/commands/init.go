@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/charmbracelet/huh"
 	"github.com/l3aro/go-context-query/internal/config"
@@ -591,6 +592,13 @@ func runInitNonInteractive(
 	}
 	fmt.Printf("Configuration saved to: %s\n", configPath)
 
+	if location == "project" {
+		added, err := updateGitignore(configPath)
+		if err == nil && added {
+			fmt.Println("Added .gcq to .gitignore")
+		}
+	}
+
 	if skipHealthCheck {
 		fmt.Println("\n=== Health check skipped ===")
 		return nil
@@ -642,6 +650,44 @@ func runInitNonInteractive(
 
 	fmt.Println("\n=== Initialization Complete ===")
 	return nil
+}
+
+func updateGitignore(configPath string) (bool, error) {
+	dir := filepath.Dir(configPath)
+	if filepath.Base(dir) != ".gcq" {
+		return false, nil
+	}
+
+	projectDir := filepath.Dir(dir)
+	gitignorePath := filepath.Join(projectDir, ".gitignore")
+
+	if _, err := os.Stat(gitignorePath); err != nil {
+		return false, nil
+	}
+
+	content, err := os.ReadFile(gitignorePath)
+	if err != nil {
+		return false, nil
+	}
+
+	for _, line := range strings.Split(string(content), "\n") {
+		if strings.TrimSpace(line) == ".gcq" {
+			return false, nil
+		}
+	}
+
+	f, err := os.OpenFile(gitignorePath, os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		return false, nil
+	}
+	defer f.Close()
+
+	_, err = f.WriteString("\n# gcq\n.gcq\n")
+	if err != nil {
+		return false, err
+	}
+
+	return true, nil
 }
 
 func init() {
