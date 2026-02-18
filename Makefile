@@ -7,27 +7,28 @@ VERSION=$(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 BUILD_TIME=$(shell date -u '+%Y-%m-%d_%H:%M:%S')
 LDFLAGS=-ldflags "-s -w -X main.version=${VERSION} -X main.buildTime=${BUILD_TIME}"
 GO=go
+OUTPUT_DIR=bin
 
 # Default target
 all: build
 
 # Build both binaries
 build:
-	@mkdir -p bin
-	${GO} build ${LDFLAGS} -o bin/${BINARY_NAME} ./cmd/gcq
-	${GO} build ${LDFLAGS} -o bin/${DAEMON_NAME} ./cmd/gcqd
+	@mkdir -p $(OUTPUT_DIR)
+	${GO} build ${LDFLAGS} -o $(OUTPUT_DIR)/${BINARY_NAME} ./cmd/gcq
+	${GO} build ${LDFLAGS} -o $(OUTPUT_DIR)/${DAEMON_NAME} ./cmd/gcqd
 
 # Build for all platforms
 # Note: ARM64 builds require native compilation due to go-tree-sitter C bindings
 # Only amd64 cross-platform builds are supported
 build-all:
-	@mkdir -p bin
-	GOOS=linux GOARCH=amd64 ${GO} build ${LDFLAGS} -o bin/${BINARY_NAME}-linux-amd64 ./cmd/gcq
-	GOOS=linux GOARCH=amd64 ${GO} build ${LDFLAGS} -o bin/${DAEMON_NAME}-linux-amd64 ./cmd/gcqd
-	GOOS=darwin GOARCH=amd64 ${GO} build ${LDFLAGS} -o bin/${BINARY_NAME}-darwin-amd64 ./cmd/gcq
-	GOOS=darwin GOARCH=amd64 ${GO} build ${LDFLAGS} -o bin/${DAEMON_NAME}-darwin-amd64 ./cmd/gcqd
-	GOOS=windows GOARCH=amd64 ${GO} build ${LDFLAGS} -o bin/${BINARY_NAME}-windows-amd64.exe ./cmd/gcq
-	GOOS=windows GOARCH=amd64 ${GO} build ${LDFLAGS} -o bin/${DAEMON_NAME}-windows-amd64.exe ./cmd/gcqd
+	@mkdir -p $(OUTPUT_DIR)
+	GOOS=linux GOARCH=amd64 ${GO} build ${LDFLAGS} -o $(OUTPUT_DIR)/${BINARY_NAME}-linux-amd64 ./cmd/gcq
+	GOOS=linux GOARCH=amd64 ${GO} build ${LDFLAGS} -o $(OUTPUT_DIR)/${DAEMON_NAME}-linux-amd64 ./cmd/gcqd
+	GOOS=darwin GOARCH=amd64 ${GO} build ${LDFLAGS} -o $(OUTPUT_DIR)/${BINARY_NAME}-darwin-amd64 ./cmd/gcq
+	GOOS=darwin GOARCH=amd64 ${GO} build ${LDFLAGS} -o $(OUTPUT_DIR)/${DAEMON_NAME}-darwin-amd64 ./cmd/gcqd
+	GOOS=windows GOARCH=amd64 ${GO} build ${LDFLAGS} -o $(OUTPUT_DIR)/${BINARY_NAME}-windows-amd64.exe ./cmd/gcq
+	GOOS=windows GOARCH=amd64 ${GO} build ${LDFLAGS} -o $(OUTPUT_DIR)/${DAEMON_NAME}-windows-amd64.exe ./cmd/gcqd
 
 # Run tests
 test:
@@ -39,7 +40,7 @@ test-no-cov:
 
 # Clean build artifacts
 clean:
-	rm -rf bin/
+	rm -rf $(OUTPUT_DIR)/
 	rm -f coverage.out
 
 # Run linter
