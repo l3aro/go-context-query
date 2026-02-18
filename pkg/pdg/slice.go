@@ -22,7 +22,12 @@ type DependencyInfo struct {
 // buildEdgeMaps creates incoming and outgoing edge maps for efficient traversal.
 // incoming[nodeID] contains all edges pointing TO that node
 // outgoing[nodeID] contains all edges originating FROM that node
+// Results are cached in the PDGInfo struct for subsequent calls.
 func buildEdgeMaps(pdg *PDGInfo) (incoming map[string][]PDGEdge, outgoing map[string][]PDGEdge) {
+	if pdg.cacheValid {
+		return pdg.incomingCache, pdg.outgoingCache
+	}
+
 	incoming = make(map[string][]PDGEdge)
 	outgoing = make(map[string][]PDGEdge)
 
@@ -30,6 +35,12 @@ func buildEdgeMaps(pdg *PDGInfo) (incoming map[string][]PDGEdge, outgoing map[st
 		outgoing[edge.SourceID] = append(outgoing[edge.SourceID], edge)
 		incoming[edge.TargetID] = append(incoming[edge.TargetID], edge)
 	}
+
+	// Cache the results
+	pdg.incomingCache = incoming
+	pdg.outgoingCache = outgoing
+	pdg.cacheValid = true
+
 	return
 }
 

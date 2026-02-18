@@ -56,4 +56,9 @@ type PDGInfo struct {
 	DFG          *dfg.DFGInfo       `json:"dfg"`           // Data Flow Graph information
 	Nodes        map[string]PDGNode `json:"nodes"`         // Map of node ID to node
 	Edges        []PDGEdge          `json:"edges"`         // List of edges in the graph
+
+	// Cached edge maps for efficient traversal
+	incomingCache map[string][]PDGEdge // cached incoming edges
+	outgoingCache map[string][]PDGEdge // cached outgoing edges
+	cacheValid    bool                 // whether cache is valid
 }
