@@ -40,6 +40,11 @@ var contextCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		entryPath := args[0]
 
+		// Get path flag
+		pathFlag, _ := cmd.Flags().GetString("path")
+		langFlag, _ := cmd.Flags().GetString("language")
+		_ = langFlag // TODO: Use for language-specific extraction
+
 		// Get absolute path
 		absPath, err := filepath.Abs(entryPath)
 		if err != nil {
@@ -56,9 +61,18 @@ var contextCmd = &cobra.Command{
 			return fmt.Errorf("path is a directory, expected a file: %s", entryPath)
 		}
 
-		rootDir, err := findProjectRoot(absPath)
-		if err != nil {
-			return fmt.Errorf("finding project root: %w", err)
+		// Determine root directory
+		var rootDir string
+		if pathFlag != "" {
+			rootDir, err = filepath.Abs(pathFlag)
+			if err != nil {
+				return fmt.Errorf("getting absolute path for --path: %w", err)
+			}
+		} else {
+			rootDir, err = findProjectRoot(absPath)
+			if err != nil {
+				return fmt.Errorf("finding project root: %w", err)
+			}
 		}
 
 		// Scan project files
@@ -137,6 +151,8 @@ var contextCmd = &cobra.Command{
 
 func init() {
 	contextCmd.Flags().BoolP("json", "j", false, "Output as JSON")
+	contextCmd.Flags().StringP("language", "l", "", "Language of the entry point file")
+	contextCmd.Flags().StringP("path", "", "", "Project root path (defaults to directory containing entry point)")
 }
 
 // findProjectRoot returns the project root directory.

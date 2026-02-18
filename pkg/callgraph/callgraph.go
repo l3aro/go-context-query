@@ -8,10 +8,48 @@ import (
 	"os"
 	"strings"
 
+	"github.com/l3aro/go-context-query/pkg/extractor"
 	"github.com/l3aro/go-context-query/pkg/types"
 	sitter "github.com/smacker/go-tree-sitter"
 	"github.com/smacker/go-tree-sitter/python"
 )
+
+// languageNodeTypes defines the node type names for each language
+type languageNodeTypes struct {
+	functionDef string
+	classDef    string
+	block       string
+	call        string
+	identifier  string
+	methodDef   string
+	methodCall  string
+}
+
+// nodeTypesByLanguage returns the node type names for a given language
+func nodeTypesByLanguage(lang extractor.Language) languageNodeTypes {
+	switch lang {
+	case extractor.PHP:
+		return languageNodeTypes{
+			functionDef: "function_definition",
+			classDef:    "class_declaration",
+			block:       "compound_statement",
+			call:        "function_call_expression",
+			identifier:  "name",
+			methodDef:   "method_declaration",
+			methodCall:  "member_call_expression",
+		}
+	default:
+		return languageNodeTypes{
+			functionDef: "function_definition",
+			classDef:    "class_definition",
+			block:       "block",
+			call:        "call",
+			identifier:  "identifier",
+			methodDef:   "method_definition",
+			methodCall:  "call",
+		}
+	}
+}
 
 // CallType represents the type of function call
 type CallType string
@@ -77,17 +115,50 @@ func NewIntraFileCallGraph(filePath string) *IntraFileCallGraph {
 
 // Builder builds intra-file call graphs using tree-sitter parsing
 type Builder struct {
-	parser *sitter.Parser
+	parser    *sitter.Parser
+	language  extractor.Language
+	nodeTypes languageNodeTypes
 }
 
-// NewBuilder creates a new call graph builder for Python files
+// NewBuilder creates a new call graph builder for the specified language
 func NewBuilder() *Builder {
-	parser := sitter.NewParser()
-	parser.SetLanguage(python.GetLanguage())
-	return &Builder{parser: parser}
+	return NewBuilderForLanguage(extractor.Python)
 }
 
-// BuildFromFile builds a call graph by analyzing a Python source file
+// NewBuilderForLanguage creates a new call graph builder for the specified language
+func NewBuilderForLanguage(lang extractor.Language) *Builder {
+	parser := sitter.NewParser()
+
+	switch lang {
+	case extractor.Python:
+		parser.SetLanguage(python.GetLanguage())
+	default:
+		parser.SetLanguage(python.GetLanguage())
+	}
+
+	return &Builder{
+		parser:    parser,
+		language:  lang,
+		nodeTypes: nodeTypesByLanguage(lang),
+	}
+}
+
+// SetLanguage updates the builder to use the specified language
+func (b *Builder) SetLanguage(lang extractor.Language) {
+	b.language = lang
+	b.nodeTypes = nodeTypesByLanguage(lang)
+
+	parser := sitter.NewParser()
+	switch lang {
+	case extractor.Python:
+		parser.SetLanguage(python.GetLanguage())
+	default:
+		parser.SetLanguage(python.GetLanguage())
+	}
+	b.parser = parser
+}
+
+// BuildFromFile builds a call graph by analyzing a source file
 func (b *Builder) BuildFromFile(filePath string, moduleInfo *types.ModuleInfo) (*IntraFileCallGraph, error) {
 	content, err := os.ReadFile(filePath)
 	if err != nil {
@@ -97,7 +168,7 @@ func (b *Builder) BuildFromFile(filePath string, moduleInfo *types.ModuleInfo) (
 	return b.BuildFromBytes(content, filePath, moduleInfo)
 }
 
-// BuildFromBytes builds a call graph from Python source code bytes
+// BuildFromBytes builds a call graph from source code bytes
 func (b *Builder) BuildFromBytes(content []byte, filePath string, moduleInfo *types.ModuleInfo) (*IntraFileCallGraph, error) {
 	graph := NewIntraFileCallGraph(filePath)
 
@@ -149,35 +220,32 @@ func (b *Builder) walkForCallGraph(node *sitter.Node, content []byte, graph *Int
 		return
 	}
 
-	switch node.Type() {
-	case "function_definition":
-		// Parse the function and create a new entry
+	nodeType := node.Type()
+
+	switch nodeType {
+	case b.nodeTypes.functionDef:
 		fn := b.parseFunctionForCallGraph(node, content)
 		if fn != nil {
 			graph.Entries[fn.Caller] = fn
-			// Walk the function body to find calls
 			for i := 0; i < int(node.ChildCount()); i++ {
 				child := node.Child(i)
-				if child != nil && child.Type() == "block" {
+				if child != nil && child.Type() == b.nodeTypes.block {
 					b.walkForCallGraph(child, content, graph, fn)
 				}
 			}
 		}
-		return // Don't traverse into function bodies here
-	case "class_definition":
-		// Walk into class body to find method definitions
+		return
+	case b.nodeTypes.classDef:
 		for i := 0; i < int(node.ChildCount()); i++ {
 			child := node.Child(i)
-			if child != nil && child.Type() == "block" {
-				// Walk into class block to find method definitions
+			if child != nil && child.Type() == b.nodeTypes.block {
 				for j := 0; j < int(child.ChildCount()); j++ {
 					b.walkForCallGraph(child.Child(j), content, graph, nil)
 				}
 			}
 		}
 		return
-	case "call":
-		// Found a function call - extract it
+	case b.nodeTypes.call, b.nodeTypes.methodCall:
 		if currentFunction != nil {
 			calledFn := b.extractCall(node, content, graph)
 			if calledFn != nil {
@@ -186,7 +254,6 @@ func (b *Builder) walkForCallGraph(node *sitter.Node, content []byte, graph *Int
 		}
 	}
 
-	// Recursively walk children (only if not already handled above)
 	for i := 0; i < int(node.ChildCount()); i++ {
 		b.walkForCallGraph(node.Child(i), content, graph, currentFunction)
 	}
@@ -194,7 +261,7 @@ func (b *Builder) walkForCallGraph(node *sitter.Node, content []byte, graph *Int
 
 // parseFunctionForCallGraph extracts function name and creates an entry
 func (b *Builder) parseFunctionForCallGraph(node *sitter.Node, content []byte) *CallGraphEntry {
-	if node == nil || node.Type() != "function_definition" {
+	if node == nil || node.Type() != b.nodeTypes.functionDef {
 		return nil
 	}
 
@@ -207,7 +274,7 @@ func (b *Builder) parseFunctionForCallGraph(node *sitter.Node, content []byte) *
 			continue
 		}
 
-		if child.Type() == "identifier" {
+		if child.Type() == b.nodeTypes.identifier {
 			name = b.nodeText(child, content)
 			break
 		}
@@ -226,13 +293,25 @@ func (b *Builder) parseFunctionForCallGraph(node *sitter.Node, content []byte) *
 
 // extractCall extracts call information from a call node
 func (b *Builder) extractCall(node *sitter.Node, content []byte, graph *IntraFileCallGraph) *CalledFunction {
-	if node == nil || node.Type() != "call" {
+	if node == nil {
 		return nil
 	}
 
-	// The first child of a call node is the function being called
+	nodeType := node.Type()
+	if nodeType != b.nodeTypes.call && nodeType != b.nodeTypes.methodCall {
+		return nil
+	}
+
 	if node.ChildCount() == 0 {
 		return nil
+	}
+
+	lineNumber := int(node.StartPoint().Row) + 1
+
+	// Only call extractMethodCall if the node is specifically a method call, not a regular call
+	// For Python, call == methodCall == "call", so we need to check if they're different
+	if nodeType == b.nodeTypes.methodCall && b.nodeTypes.call != b.nodeTypes.methodCall {
+		return b.extractMethodCall(node, content, graph, lineNumber)
 	}
 
 	fnNode := node.Child(0)
@@ -240,10 +319,8 @@ func (b *Builder) extractCall(node *sitter.Node, content []byte, graph *IntraFil
 		return nil
 	}
 
-	lineNumber := int(node.StartPoint().Row) + 1
-
 	switch fnNode.Type() {
-	case "identifier":
+	case b.nodeTypes.identifier:
 		// Simple function call: my_function()
 		name := b.nodeText(fnNode, content)
 		callType := b.determineCallType(name, graph)
@@ -297,6 +374,44 @@ func (b *Builder) extractCall(node *sitter.Node, content []byte, graph *IntraFil
 			LineNumber:  lineNumber,
 			IsAttribute: false,
 		}
+	}
+}
+
+// extractMethodCall extracts call information from a PHP method call node
+func (b *Builder) extractMethodCall(node *sitter.Node, content []byte, graph *IntraFileCallGraph, lineNumber int) *CalledFunction {
+	if node == nil {
+		return nil
+	}
+
+	var base, methodName string
+
+	for i := 0; i < int(node.ChildCount()); i++ {
+		child := node.Child(i)
+		if child == nil {
+			continue
+		}
+		switch child.Type() {
+		case "variable_name":
+			base = b.nodeText(child, content)
+		case "name":
+			methodName = b.nodeText(child, content)
+		}
+	}
+
+	if methodName == "" {
+		return nil
+	}
+
+	fullName := base + "->" + methodName
+	callType := b.determineCallType(methodName, graph)
+
+	return &CalledFunction{
+		Name:        fullName,
+		Base:        base,
+		Method:      methodName,
+		Type:        callType,
+		LineNumber:  lineNumber,
+		IsAttribute: true,
 	}
 }
 

@@ -81,6 +81,7 @@ func (e *PHPExtractor) ExtractFromBytes(content []byte, filePath string) (*types
 		Imports:    imports,
 		Traits:     traits,
 		Interfaces: interfaces,
+		Language:   string(e.Language()),
 		CallGraph:  types.CallGraph{Edges: []types.CallGraphEdge{}},
 	}, nil
 }
@@ -131,7 +132,7 @@ func (e *PHPExtractor) walkForClasses(node *sitter.Node, content []byte, classes
 			if child != nil && child.Type() == "name" {
 				name = e.getNodeText(child, content)
 			}
-			if child != nil && child.Type() == "body" {
+			if child != nil && child.Type() == "declaration_list" {
 				methods = e.extractMethods(child, content)
 			}
 		}
@@ -267,9 +268,9 @@ func (e *PHPExtractor) extractMethods(node *sitter.Node, content []byte) []types
 		if child == nil {
 			continue
 		}
-		if child.Type() == "method_definition" {
+		if child.Type() == "method_declaration" {
 			lineNumber := int(child.StartPoint().Row) + 1
-			var name, params string
+			var name, params, returnType string
 
 			for j := 0; j < int(child.ChildCount()); j++ {
 				mchild := child.Child(j)
@@ -281,6 +282,8 @@ func (e *PHPExtractor) extractMethods(node *sitter.Node, content []byte) []types
 					name = e.getNodeText(mchild, content)
 				case "formal_parameters":
 					params = e.getNodeText(mchild, content)
+				case "primitive_type":
+					returnType = e.getNodeText(mchild, content)
 				}
 			}
 
@@ -288,7 +291,9 @@ func (e *PHPExtractor) extractMethods(node *sitter.Node, content []byte) []types
 				methods = append(methods, types.Method{
 					Name:       name,
 					Params:     params,
+					ReturnType: returnType,
 					LineNumber: lineNumber,
+					IsMethod:   true,
 				})
 			}
 		}

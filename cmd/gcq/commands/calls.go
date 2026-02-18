@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	"github.com/l3aro/go-context-query/internal/daemon"
 	"github.com/l3aro/go-context-query/internal/scanner"
@@ -77,6 +78,9 @@ func runCallsLocally(path string, cmd *cobra.Command) error {
 		return fmt.Errorf("finding project root: %w", err)
 	}
 
+	// Get language flag
+	langFlag, _ := cmd.Flags().GetString("language")
+
 	// Scan project files
 	sc := scanner.New(scanner.DefaultOptions())
 	files, err := sc.Scan(rootDir)
@@ -84,17 +88,34 @@ func runCallsLocally(path string, cmd *cobra.Command) error {
 		return fmt.Errorf("scanning directory: %w", err)
 	}
 
-	// Get supported file paths
-	var supportedFiles []string
 	registry := extractor.NewLanguageRegistry()
+
+	// Filter by language if specified
+	var supportedFiles []string
 	for _, f := range files {
-		if registry.IsSupported(f.FullPath) {
-			supportedFiles = append(supportedFiles, f.FullPath)
+		if langFlag != "" {
+			// Use language-specific extractor
+			if strings.EqualFold(f.Language, langFlag) && registry.IsSupported(f.FullPath) {
+				supportedFiles = append(supportedFiles, f.FullPath)
+			}
+		} else {
+			// Auto-detect - use all supported files
+			if registry.IsSupported(f.FullPath) {
+				supportedFiles = append(supportedFiles, f.FullPath)
+			}
 		}
 	}
 
+	// Get the extractor for the language (or Python as default)
+	var ext extractor.Extractor
+	if langFlag != "" {
+		ext = getExtractorForLanguage(langFlag)
+	} else {
+		ext = extractor.NewPythonExtractor()
+	}
+
 	// Build call graph
-	resolver := callgraph.NewResolver(rootDir, extractor.NewPythonExtractor())
+	resolver := callgraph.NewResolver(rootDir, ext)
 	callGraph, err := resolver.ResolveCalls(supportedFiles)
 	if err != nil {
 		return fmt.Errorf("building call graph: %w", err)
@@ -167,6 +188,41 @@ func printCallGraph(output CallGraphOutput) {
 	}
 }
 
+// getExtractorForLanguage returns an extractor for the specified language
+func getExtractorForLanguage(lang string) extractor.Extractor {
+	switch strings.ToLower(lang) {
+	case "python":
+		return extractor.NewPythonExtractor()
+	case "go":
+		return extractor.NewGoExtractor()
+	case "php":
+		return extractor.NewPHPExtractor()
+	case "javascript", "js":
+		return extractor.NewJavaScriptExtractor()
+	case "typescript", "ts":
+		return extractor.NewTypeScriptExtractor()
+	case "java":
+		return extractor.NewJavaExtractor()
+	case "rust":
+		return extractor.NewRustExtractor()
+	case "ruby":
+		return extractor.NewRubyExtractor()
+	case "c":
+		return extractor.NewCExtractor()
+	case "cpp", "c++":
+		return extractor.NewCPPExtractor()
+	case "swift":
+		return extractor.NewSwiftExtractor()
+	case "kotlin":
+		return extractor.NewKotlinExtractor()
+	case "csharp", "c#":
+		return extractor.NewCSharpExtractor()
+	default:
+		return extractor.NewPythonExtractor()
+	}
+}
+
 func init() {
 	callsCmd.Flags().BoolP("json", "j", false, "Output as JSON")
+	callsCmd.Flags().StringP("language", "l", "", "Language to analyze (python, go, php, etc.)")
 }

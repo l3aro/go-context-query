@@ -65,15 +65,31 @@ func runSemanticViaDaemon(query string, cmd *cobra.Command) error {
 }
 
 func runSemanticLocally(query string, cmd *cobra.Command) error {
-	// Find project root from current directory
-	cwd, err := os.Getwd()
-	if err != nil {
-		return fmt.Errorf("getting current directory: %w", err)
-	}
+	// Get path flag - defaults to current directory
+	pathFlag, _ := cmd.Flags().GetString("path")
 
-	rootDir, err := findProjectRoot(cwd)
-	if err != nil {
-		return fmt.Errorf("finding project root: %w", err)
+	// Determine the root directory
+	rootDir := ""
+	if pathFlag != "" {
+		absPath, err := filepath.Abs(pathFlag)
+		if err != nil {
+			return fmt.Errorf("getting absolute path: %w", err)
+		}
+		rootDir, err = findProjectRoot(absPath)
+		if err != nil {
+			return fmt.Errorf("finding project root: %w", err)
+		}
+	} else {
+		// Find project root from current directory
+		cwd, err := os.Getwd()
+		if err != nil {
+			return fmt.Errorf("getting current directory: %w", err)
+		}
+
+		rootDir, err = findProjectRoot(cwd)
+		if err != nil {
+			return fmt.Errorf("finding project root: %w", err)
+		}
 	}
 
 	// Load config
@@ -226,4 +242,5 @@ func init() {
 	semanticCmd.Flags().String("search-provider", "", "Search-specific embedding provider (ollama or huggingface)")
 	semanticCmd.Flags().String("search-model", "", "Search-specific embedding model name")
 	semanticCmd.Flags().IntP("k", "k", 10, "Number of results to return")
+	semanticCmd.Flags().StringP("path", "", "", "Project path to search (defaults to current directory)")
 }

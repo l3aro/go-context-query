@@ -231,7 +231,7 @@ func NewBuilder(rootDir string, embedProvider embed.Provider) (*Builder, error) 
 		cacheDir:          cacheDir,
 		scanner:           scanner.New(scanner.DefaultOptions()),
 		extractor:         extractor.NewLanguageRegistry(),
-		callGraphResolver: callgraph.NewResolver(absRoot, extractor.NewPythonExtractor()),
+		callGraphResolver: nil,
 		embedProvider:     embedProvider,
 		vectorIndex:       nil,
 		codeUnits:         nil,
@@ -295,38 +295,38 @@ func (b *Builder) Extract(files []scanner.FileInfo) ([]*CodeUnit, error) {
 		languageFiles[lang] = append(languageFiles[lang], f.FullPath)
 	}
 
-	// Get Python files for call graph resolution (if any)
-	var pyFiles []string
-	if pf, ok := languageFiles["python"]; ok {
-		pyFiles = pf
-	}
-
-	// Create lookup maps for calls and callers (only for Python for now)
+	// Build call graph for each language present in the project
 	callsMap := make(map[string][]string)   // func -> functions it calls
 	callersMap := make(map[string][]string) // func -> functions that call it
 
-	// Build cross-file call graph only for Python files
-	if len(pyFiles) > 0 {
-		callGraph, err := b.callGraphResolver.ResolveCalls(pyFiles)
+	// Process each language that has files
+	for lang, files := range languageFiles {
+		ext, err := b.extractor.GetExtractor(files[0])
 		if err != nil {
-			// Don't fail - just log and continue without call graph
-			fmt.Printf("Warning: building call graph: %v\n", err)
-		} else {
-			// Process edges
-			for _, edge := range callGraph.CrossFileEdges {
-				callerKey := fmt.Sprintf("%s:%s", edge.SourceFile, edge.SourceFunc)
-				calleeKey := fmt.Sprintf("%s:%s", edge.DestFile, edge.DestFunc)
-				callsMap[callerKey] = append(callsMap[callerKey], calleeKey)
-				callersMap[calleeKey] = append(callersMap[callerKey], callerKey)
-			}
+			continue
+		}
 
-			// Also process intra-file edges
-			for _, edge := range callGraph.IntraFileEdges {
-				callerKey := fmt.Sprintf("%s:%s", edge.SourceFile, edge.SourceFunc)
-				calleeKey := fmt.Sprintf("%s:%s", edge.DestFile, edge.DestFunc)
-				callsMap[callerKey] = append(callsMap[callerKey], calleeKey)
-				callersMap[calleeKey] = append(callersMap[callerKey], callerKey)
-			}
+		resolver := callgraph.NewResolver(b.rootDir, ext)
+		callGraph, err := resolver.ResolveCalls(files)
+		if err != nil {
+			fmt.Printf("Warning: building call graph for %s: %v\n", lang, err)
+			continue
+		}
+
+		// Process edges
+		for _, edge := range callGraph.CrossFileEdges {
+			callerKey := fmt.Sprintf("%s:%s", edge.SourceFile, edge.SourceFunc)
+			calleeKey := fmt.Sprintf("%s:%s", edge.DestFile, edge.DestFunc)
+			callsMap[callerKey] = append(callsMap[callerKey], calleeKey)
+			callersMap[calleeKey] = append(callersMap[callerKey], callerKey)
+		}
+
+		// Also process intra-file edges
+		for _, edge := range callGraph.IntraFileEdges {
+			callerKey := fmt.Sprintf("%s:%s", edge.SourceFile, edge.SourceFunc)
+			calleeKey := fmt.Sprintf("%s:%s", edge.DestFile, edge.DestFunc)
+			callsMap[callerKey] = append(callsMap[callerKey], calleeKey)
+			callersMap[calleeKey] = append(callersMap[callerKey], callerKey)
 		}
 	}
 

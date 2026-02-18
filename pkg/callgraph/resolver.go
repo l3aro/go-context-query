@@ -413,8 +413,10 @@ func (r *Resolver) resolveFileCalls(filePath string, resolver *ImportResolver) e
 	// Build import mapping for this file
 	importMap := r.buildImportMap(imports, filePath, resolver)
 
-	// Build intra-file call graph
+	// Build intra-file call graph (builder.parser is not thread-safe)
+	r.parseMu.Lock()
 	intraGraph, err := r.builder.BuildFromFile(filePath, moduleInfo)
+	r.parseMu.Unlock()
 	if err != nil {
 		return fmt.Errorf("building intra-file call graph: %w", err)
 	}

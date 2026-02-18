@@ -67,6 +67,17 @@ func runImpactLocally(funcName string, cmd *cobra.Command) error {
 		return fmt.Errorf("finding project root: %w", err)
 	}
 
+	// Get language flag
+	langFlag, _ := cmd.Flags().GetString("language")
+
+	// Get extractor for language
+	var ext extractor.Extractor
+	if langFlag != "" {
+		ext = getExtractorForLanguage(langFlag)
+	} else {
+		ext = extractor.NewPythonExtractor()
+	}
+
 	// Scan project files
 	sc := scanner.New(scanner.DefaultOptions())
 	files, err := sc.Scan(rootDir)
@@ -74,17 +85,23 @@ func runImpactLocally(funcName string, cmd *cobra.Command) error {
 		return fmt.Errorf("scanning directory: %w", err)
 	}
 
-	// Get supported file paths
+	// Get supported file paths and filter by language if specified
 	var supportedFiles []string
 	registry := extractor.NewLanguageRegistry()
 	for _, f := range files {
-		if registry.IsSupported(f.FullPath) {
-			supportedFiles = append(supportedFiles, f.FullPath)
+		if langFlag != "" {
+			if strings.EqualFold(f.Language, langFlag) && registry.IsSupported(f.FullPath) {
+				supportedFiles = append(supportedFiles, f.FullPath)
+			}
+		} else {
+			if registry.IsSupported(f.FullPath) {
+				supportedFiles = append(supportedFiles, f.FullPath)
+			}
 		}
 	}
 
 	// Build call graph
-	resolver := callgraph.NewResolver(rootDir, extractor.NewPythonExtractor())
+	resolver := callgraph.NewResolver(rootDir, ext)
 	callGraph, err := resolver.ResolveCalls(supportedFiles)
 	if err != nil {
 		return fmt.Errorf("building call graph: %w", err)
@@ -187,4 +204,5 @@ func printImpact(output ImpactOutput) {
 
 func init() {
 	impactCmd.Flags().BoolP("json", "j", false, "Output as JSON")
+	impactCmd.Flags().StringP("language", "l", "", "Language to analyze (python, go, php, etc.)")
 }
