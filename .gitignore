@@ -41,7 +41,7 @@ build/
 *.log
 
 # Agent/IDE configs
-.agents/
+# .agents/ - keep tracked for gcq skill
 .windsurf/
 .sisyphus/
 .gcq

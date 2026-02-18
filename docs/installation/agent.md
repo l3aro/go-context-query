@@ -155,3 +155,40 @@ export GCQ_OLLAMA_BASE_URL=http://localhost:11434
 ```bash
 ./gcq init --warm-provider ollama --location global --skip-health-check
 ```
+
+## Using gcq with Agents
+
+gcq includes a skill definition for AI agents. When installed, agents can automatically discover and use gcq for:
+- Semantic code search and indexing
+- Call graph analysis
+- Context gathering for LLM processing
+- Code structure extraction
+
+Agents with skill support will automatically use gcq when you mention:
+- "semantic search"
+- "find related code"
+- "call graph"
+- "code context"
+- "understand codebase"
+
+## Installing gcq Skill
+
+For agents that support skill loading, install the gcq skill:
+
+```bash
+# Clone the repository with skills
+git clone https://github.com/vectordotdev/go-context-query.git
+
+# Copy skill to agent skills directory
+cp -r go-context-query/.agents/skills/gcq ~/.agents/skills/
+
+# Or download just the skill file
+mkdir -p ~/.agents/skills/gcq
+curl -sL https://raw.githubusercontent.com/vectordotdev/go-context-query/main/.agents/skills/gcq/SKILL.md \
+  -o ~/.agents/skills/gcq/SKILL.md
+```
+
+The skill provides:
+- Command reference for all 15 gcq commands
+- Workflows for common analysis tasks
+- Configuration guidance
