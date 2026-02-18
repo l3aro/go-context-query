@@ -28,35 +28,64 @@ chunk_size: 512
 
 Or use environment variables (see `internal/config/config.go`).
 
+### Dual Provider Configuration
+
+You can use different embedding providers for indexing (warming) and search operations:
+
+```yaml
+# Dual provider: use Ollama for indexing, HuggingFace for search
+warm_provider: ollama
+warm_ollama_model: nomic-embed-text
+warm_ollama_base_url: http://localhost:11434
+
+search_provider: huggingface
+search_hf_model: sentence-transformers/all-MiniLM-L6-v2
+
+# Shared settings
+socket_path: /tmp/gcq.sock
+threshold_similarity: 0.7
+max_context_chunks: 10
+chunk_size: 512
+```
+
+Or use different Ollama endpoints:
+
+```yaml
+# Dual Ollama: fast local model for indexing, cloud endpoint for search
+warm_provider: ollama
+warm_ollama_model: nomic-embed-text
+warm_ollama_base_url: http://localhost:11434
+
+search_provider: ollama
+search_ollama_model: bge-m3
+search_ollama_base_url: https://ollama.example.com
+```
+
 ## Usage
 
 ### CLI Commands
 
 ```bash
-# Display file tree structure
-gcq tree <path>
-
-# Show code structure (functions, classes, imports)
-gcq structure <path>
-
-# Full file analysis
-gcq extract <path>
-
-# Get LLM-ready context from entry point
-gcq context <path>
-
-# Build call graph for a project
-gcq calls <path>
-
-# Find callers of a function
-gcq impact <path>
-
-# Build semantic index for a project
+# Build semantic index (uses warm_provider or provider)
 gcq warm <paths...>
 
-# Semantic search over indexed code
+# Semantic search (uses search_provider or provider)
 gcq semantic <query>
+
+# Override provider via flags
+gcq warm --warm-provider ollama ./myproject
+gcq semantic --search-provider huggingface "find auth code"
 ```
+
+### Provider Flags
+
+| Flag | Command | Description |
+|------|---------|-------------|
+| `--provider`, `-p` | warm, semantic | Legacy provider flag (ollama or huggingface) |
+| `--warm-provider` | warm | Provider for indexing operations |
+| `--search-provider` | semantic | Provider for search queries |
+
+Provider priority: flag > config > default (ollama)
 
 ### Daemon
 

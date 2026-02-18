@@ -29,7 +29,9 @@ import (
 	"github.com/l3aro/go-context-query/pkg/types"
 )
 
-const Version = "0.1.0"
+var version = "dev"
+var buildTime = ""
+
 const DefaultSocketPath = "/tmp/gcq.sock"
 const DefaultTCPPort = "9847"
 
@@ -270,7 +272,7 @@ func (d *Daemon) handleStatus(cmd Command) Response {
 	count, dim := d.searcher.IndexStats()
 
 	result := map[string]interface{}{
-		"version":     Version,
+		"version":     version,
 		"status":      "running",
 		"index_count": count,
 		"dimension":   dim,
@@ -767,6 +769,9 @@ func main() {
 			}
 		case "-v", "--verbose", "-verbose":
 			verbose = true
+		case "-version", "--version":
+			fmt.Printf("gcqd version %s\n", version)
+			os.Exit(0)
 		case "-h", "--help", "-help":
 			fmt.Println("Usage: gcqd [options]")
 			fmt.Println("Options:")
@@ -805,7 +810,7 @@ func main() {
 		log.Fatalf("Failed to create daemon: %v", err)
 	}
 
-	log.Printf("Starting gcqd v%s", Version)
+	log.Printf("Starting gcqd v%s", version)
 
 	if err := daemon.StartSocketServer(); err != nil {
 		log.Fatalf("Server error: %v", err)

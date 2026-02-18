@@ -18,6 +18,8 @@ build:
 	${GO} build ${LDFLAGS} -o bin/${DAEMON_NAME} ./cmd/gcqd
 
 # Build for all platforms
+# Note: ARM64 builds require native compilation due to go-tree-sitter C bindings
+# Only amd64 cross-platform builds are supported
 build-all:
 	@mkdir -p bin
 	GOOS=linux GOARCH=amd64 ${GO} build ${LDFLAGS} -o bin/${BINARY_NAME}-linux-amd64 ./cmd/gcq

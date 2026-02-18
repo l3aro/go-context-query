@@ -1,0 +1,77 @@
+version: 2
+
+project_name: gcq
+
+archives:
+  - id: gcq-archives
+    ids:
+      - gcq
+    formats:
+      - tar.gz
+      - zip
+    files:
+      - README.md
+      - LICENSE
+  - id: gcqd-archives
+    ids:
+      - gcqd
+    formats:
+      - tar.gz
+      - zip
+    files:
+      - README.md
+      - LICENSE
+
+builds:
+  - id: gcq
+    main: ./cmd/gcq
+    binary: gcq
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    env:
+      - CGO_ENABLED=0
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.buildTime={{.Date "2006-01-02_15:04:05"}}
+
+  - id: gcqd
+    main: ./cmd/gcqd
+    binary: gcqd
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    env:
+      - CGO_ENABLED=0
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.buildTime={{.Date "2006-01-02_15:04:05"}}
+
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+
+release:
+  github:
+    owner: vectordotdev
+    name: go-context-query
+  draft: false
+  prerelease: auto
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"

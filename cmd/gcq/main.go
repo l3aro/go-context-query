@@ -17,6 +17,11 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var (
+	version   = "dev"
+	buildTime = ""
+)
+
 func main() {
 	// Add build command
 	buildCmd := &cobra.Command{
@@ -78,7 +83,11 @@ func main() {
 	commands.RootCmd.AddCommand(stopCmd)
 	commands.RootCmd.AddCommand(statusCmd)
 
-	// Execute
+	commands.RootCmd.Flags().BoolP("version", "v", false, "Print version information")
+	commands.RootCmd.SetVersionTemplate(`gcq version {{.Version}}
+`)
+	commands.RootCmd.Version = version
+
 	if err := commands.RootCmd.Execute(); err != nil {
 		os.Exit(1)
 	}
