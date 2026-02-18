@@ -745,7 +745,6 @@ func (e *TypeScriptExtractor) ExtractFromBytes(content []byte, filePath string) 
 	}, nil
 }
 
-// NewTypeScriptParser creates a new tree-sitter parser for TypeScript.
 func NewTypeScriptParser() *sitter.Parser {
 	parser := sitter.NewParser()
 	parser.SetLanguage(typescript.GetLanguage())

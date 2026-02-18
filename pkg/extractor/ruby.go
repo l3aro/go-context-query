@@ -5,11 +5,21 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 
 	"github.com/l3aro/go-context-query/pkg/types"
 	sitter "github.com/smacker/go-tree-sitter"
 	"github.com/smacker/go-tree-sitter/ruby"
 )
+
+// rubyParserPool is a pool of reusable tree-sitter parsers for Ruby.
+var rubyParserPool = sync.Pool{
+	New: func() interface{} {
+		parser := sitter.NewParser()
+		parser.SetLanguage(ruby.GetLanguage())
+		return parser
+	},
+}
 
 // RubyExtractor implements the Extractor interface for Ruby files.
 // It uses tree-sitter to parse Ruby source code and extract structured information
@@ -25,7 +35,6 @@ func NewRubyExtractor() Extractor {
 	}
 }
 
-// NewRubyParser creates a new tree-sitter parser for Ruby.
 func NewRubyParser() *sitter.Parser {
 	parser := sitter.NewParser()
 	parser.SetLanguage(ruby.GetLanguage())

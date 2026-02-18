@@ -4,11 +4,21 @@ package extractor
 import (
 	"fmt"
 	"os"
+	"sync"
 
 	"github.com/l3aro/go-context-query/pkg/types"
 	sitter "github.com/smacker/go-tree-sitter"
 	"github.com/smacker/go-tree-sitter/kotlin"
 )
+
+// kotlinParserPool is a pool of reusable tree-sitter parsers for Kotlin.
+var kotlinParserPool = sync.Pool{
+	New: func() interface{} {
+		parser := sitter.NewParser()
+		parser.SetLanguage(kotlin.GetLanguage())
+		return parser
+	},
+}
 
 // KotlinExtractor implements the Extractor interface for Kotlin files.
 // It uses tree-sitter to parse Kotlin source code and extract structured information
@@ -24,7 +34,6 @@ func NewKotlinExtractor() Extractor {
 	}
 }
 
-// NewKotlinParser creates a new tree-sitter parser for Kotlin.
 func NewKotlinParser() *sitter.Parser {
 	parser := sitter.NewParser()
 	parser.SetLanguage(kotlin.GetLanguage())

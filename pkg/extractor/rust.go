@@ -5,11 +5,21 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 
 	"github.com/l3aro/go-context-query/pkg/types"
 	sitter "github.com/smacker/go-tree-sitter"
 	"github.com/smacker/go-tree-sitter/rust"
 )
+
+// rustParserPool is a pool of reusable tree-sitter parsers for Rust.
+var rustParserPool = sync.Pool{
+	New: func() interface{} {
+		parser := sitter.NewParser()
+		parser.SetLanguage(rust.GetLanguage())
+		return parser
+	},
+}
 
 // RustExtractor implements the Extractor interface for Rust files.
 // It uses tree-sitter to parse Rust source code and extract structured information
@@ -25,7 +35,6 @@ func NewRustExtractor() Extractor {
 	}
 }
 
-// NewRustParser creates a new tree-sitter parser for Rust.
 func NewRustParser() *sitter.Parser {
 	parser := sitter.NewParser()
 	parser.SetLanguage(rust.GetLanguage())

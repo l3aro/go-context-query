@@ -4,11 +4,21 @@ package extractor
 import (
 	"fmt"
 	"os"
+	"sync"
 
 	"github.com/l3aro/go-context-query/pkg/types"
 	sitter "github.com/smacker/go-tree-sitter"
 	"github.com/smacker/go-tree-sitter/php"
 )
+
+// phpParserPool is a pool of reusable tree-sitter parsers for PHP.
+var phpParserPool = sync.Pool{
+	New: func() interface{} {
+		parser := sitter.NewParser()
+		parser.SetLanguage(php.GetLanguage())
+		return parser
+	},
+}
 
 // PHPExtractor implements the Extractor interface for PHP files.
 type PHPExtractor struct {
@@ -22,7 +32,6 @@ func NewPHPExtractor() Extractor {
 	}
 }
 
-// NewPHPParser creates a new tree-sitter parser for PHP.
 func NewPHPParser() *sitter.Parser {
 	parser := sitter.NewParser()
 	parser.SetLanguage(php.GetLanguage())

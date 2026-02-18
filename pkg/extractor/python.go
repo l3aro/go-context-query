@@ -901,7 +901,6 @@ func (e *PythonExtractor) GetDecorators(node *sitter.Node, content []byte) []str
 }
 
 // NewPythonParser creates a new tree-sitter parser for Python.
-// This is a package-level helper function for creating Python parsers.
 func NewPythonParser() *sitter.Parser {
 	parser := sitter.NewParser()
 	parser.SetLanguage(python.GetLanguage())

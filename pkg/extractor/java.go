@@ -4,11 +4,21 @@ package extractor
 import (
 	"fmt"
 	"os"
+	"sync"
 
 	"github.com/l3aro/go-context-query/pkg/types"
 	sitter "github.com/smacker/go-tree-sitter"
 	"github.com/smacker/go-tree-sitter/java"
 )
+
+// javaParserPool is a pool of reusable tree-sitter parsers for Java.
+var javaParserPool = sync.Pool{
+	New: func() interface{} {
+		parser := sitter.NewParser()
+		parser.SetLanguage(java.GetLanguage())
+		return parser
+	},
+}
 
 // JavaExtractor implements the Extractor interface for Java files.
 // It uses tree-sitter to parse Java source code and extract structured information
@@ -24,7 +34,6 @@ func NewJavaExtractor() Extractor {
 	}
 }
 
-// NewJavaParser creates a new tree-sitter parser for Java.
 func NewJavaParser() *sitter.Parser {
 	parser := sitter.NewParser()
 	parser.SetLanguage(java.GetLanguage())

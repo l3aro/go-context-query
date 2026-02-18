@@ -4,11 +4,21 @@ package extractor
 import (
 	"fmt"
 	"os"
+	"sync"
 
 	"github.com/l3aro/go-context-query/pkg/types"
 	sitter "github.com/smacker/go-tree-sitter"
 	"github.com/smacker/go-tree-sitter/csharp"
 )
+
+// csharpParserPool is a pool of reusable tree-sitter parsers for C#.
+var csharpParserPool = sync.Pool{
+	New: func() interface{} {
+		parser := sitter.NewParser()
+		parser.SetLanguage(csharp.GetLanguage())
+		return parser
+	},
+}
 
 // CSharpExtractor implements the Extractor interface for C# files.
 type CSharpExtractor struct {
@@ -22,7 +32,6 @@ func NewCSharpExtractor() Extractor {
 	}
 }
 
-// NewCSharpParser creates a new tree-sitter parser for C#.
 func NewCSharpParser() *sitter.Parser {
 	parser := sitter.NewParser()
 	parser.SetLanguage(csharp.GetLanguage())

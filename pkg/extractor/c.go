@@ -5,11 +5,21 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 
 	"github.com/l3aro/go-context-query/pkg/types"
 	sitter "github.com/smacker/go-tree-sitter"
 	"github.com/smacker/go-tree-sitter/c"
 )
+
+// cParserPool is a pool of reusable tree-sitter parsers for C.
+var cParserPool = sync.Pool{
+	New: func() interface{} {
+		parser := sitter.NewParser()
+		parser.SetLanguage(c.GetLanguage())
+		return parser
+	},
+}
 
 // CExtractor implements the Extractor interface for C files.
 // It uses tree-sitter to parse C source code and extract structured information
@@ -25,7 +35,6 @@ func NewCExtractor() Extractor {
 	}
 }
 
-// NewCParser creates a new tree-sitter parser for C.
 func NewCParser() *sitter.Parser {
 	parser := sitter.NewParser()
 	parser.SetLanguage(c.GetLanguage())

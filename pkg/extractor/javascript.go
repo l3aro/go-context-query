@@ -3,11 +3,21 @@ package extractor
 
 import (
 	"os"
+	"sync"
 
 	"github.com/l3aro/go-context-query/pkg/types"
 	sitter "github.com/smacker/go-tree-sitter"
 	"github.com/smacker/go-tree-sitter/typescript/typescript"
 )
+
+// javascriptParserPool is a pool of reusable tree-sitter parsers for JavaScript.
+var javascriptParserPool = sync.Pool{
+	New: func() interface{} {
+		parser := sitter.NewParser()
+		parser.SetLanguage(typescript.GetLanguage())
+		return parser
+	},
+}
 
 // JavaScriptExtractor implements the Extractor interface for JavaScript files.
 // It uses tree-sitter to parse JavaScript source code and extract structured information.
@@ -297,7 +307,6 @@ func (e *JavaScriptExtractor) nodeText(node *sitter.Node, content []byte) string
 	return string(content[start:end])
 }
 
-// NewJavaScriptParser creates a new tree-sitter parser for JavaScript.
 func NewJavaScriptParser() *sitter.Parser {
 	parser := sitter.NewParser()
 	parser.SetLanguage(typescript.GetLanguage())
