@@ -89,31 +89,83 @@ func NewDaemon(cfg *config.Config) (*Daemon, error) {
 }
 
 func (d *Daemon) initEmbedder(cfg *config.Config) (embed.Provider, error) {
-	embedCfg := &embed.Config{
-		Endpoint: cfg.OllamaBaseURL,
-		Model:    cfg.OllamaModel,
-		APIKey:   cfg.OllamaAPIKey,
+	providerType := cfg.WarmProvider
+	if providerType == "" {
+		providerType = cfg.Provider
+	}
+	if providerType == "" {
+		providerType = "ollama"
 	}
 
-	switch cfg.Provider {
+	model := cfg.WarmOllamaModel
+	if model == "" {
+		model = cfg.OllamaModel
+	}
+	if model == "" {
+		model = "nomic-embed-text"
+	}
+
+	endpoint := cfg.WarmOllamaBaseURL
+	if endpoint == "" {
+		endpoint = cfg.OllamaBaseURL
+	}
+	if endpoint == "" {
+		endpoint = "http://localhost:11434"
+	}
+
+	apiKey := cfg.WarmOllamaAPIKey
+	if apiKey == "" {
+		apiKey = cfg.OllamaAPIKey
+	}
+
+	embedCfg := &embed.Config{
+		Endpoint: endpoint,
+		Model:    model,
+		APIKey:   apiKey,
+	}
+
+	switch providerType {
 	case config.ProviderOllama:
 		return embed.NewOllamaProvider(embedCfg)
 	case config.ProviderHuggingFace:
-		embedCfg.Endpoint = ""
-		embedCfg.Model = cfg.HFModel
-		embedCfg.APIKey = cfg.HFToken
-		return embed.NewHuggingFaceProvider(embedCfg)
+		hfModel := cfg.WarmHFModel
+		if hfModel == "" {
+			hfModel = cfg.HFModel
+		}
+		if hfModel == "" {
+			hfModel = "sentence-transformers/all-MiniLM-L6-v2"
+		}
+		hfToken := cfg.WarmHFToken
+		if hfToken == "" {
+			hfToken = cfg.HFToken
+		}
+		return embed.NewHuggingFaceProvider(&embed.Config{
+			Model:  hfModel,
+			APIKey: hfToken,
+		})
 	default:
-		return nil, fmt.Errorf("unsupported provider: %s", cfg.Provider)
+		return embed.NewOllamaProvider(embedCfg)
 	}
 }
 
 func (d *Daemon) getEmbeddingDimension() int {
-	switch d.config.Provider {
+	providerType := d.config.WarmProvider
+	if providerType == "" {
+		providerType = d.config.Provider
+	}
+	if providerType == "" {
+		providerType = "ollama"
+	}
+
+	switch providerType {
 	case config.ProviderOllama:
 		return 768
 	case config.ProviderHuggingFace:
-		if d.config.HFModel == "sentence-transformers/all-MiniLM-L6-v2" {
+		model := d.config.WarmHFModel
+		if model == "" {
+			model = d.config.HFModel
+		}
+		if model == "sentence-transformers/all-MiniLM-L6-v2" {
 			return 384
 		}
 		return 384

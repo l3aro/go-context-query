@@ -31,23 +31,63 @@ type Executor struct {
 func NewExecutor() (*Executor, error) {
 	cfg := config.DefaultConfig()
 
+	providerType := cfg.WarmProvider
+	if providerType == "" {
+		providerType = cfg.Provider
+	}
+	if providerType == "" {
+		providerType = "ollama"
+	}
+
+	model := cfg.WarmOllamaModel
+	if model == "" {
+		model = cfg.OllamaModel
+	}
+	if model == "" {
+		model = "nomic-embed-text"
+	}
+
+	endpoint := cfg.WarmOllamaBaseURL
+	if endpoint == "" {
+		endpoint = cfg.OllamaBaseURL
+	}
+	if endpoint == "" {
+		endpoint = "http://localhost:11434"
+	}
+
+	apiKey := cfg.WarmOllamaAPIKey
+	if apiKey == "" {
+		apiKey = cfg.OllamaAPIKey
+	}
+
 	embedCfg := &embed.Config{
-		Endpoint: cfg.OllamaBaseURL,
-		Model:    cfg.OllamaModel,
-		APIKey:   cfg.OllamaAPIKey,
+		Endpoint: endpoint,
+		Model:    model,
+		APIKey:   apiKey,
 	}
 
 	var err error
 	var embedder embed.Provider
 
-	switch cfg.Provider {
+	switch providerType {
 	case config.ProviderOllama:
 		embedder, err = embed.NewOllamaProvider(embedCfg)
 	case config.ProviderHuggingFace:
-		embedCfg.Endpoint = ""
-		embedCfg.Model = cfg.HFModel
-		embedCfg.APIKey = cfg.HFToken
-		embedder, err = embed.NewHuggingFaceProvider(embedCfg)
+		hfModel := cfg.WarmHFModel
+		if hfModel == "" {
+			hfModel = cfg.HFModel
+		}
+		if hfModel == "" {
+			hfModel = "sentence-transformers/all-MiniLM-L6-v2"
+		}
+		hfToken := cfg.WarmHFToken
+		if hfToken == "" {
+			hfToken = cfg.HFToken
+		}
+		embedder, err = embed.NewHuggingFaceProvider(&embed.Config{
+			Model:  hfModel,
+			APIKey: hfToken,
+		})
 	default:
 		embedder, err = embed.NewOllamaProvider(embedCfg)
 	}
@@ -56,9 +96,15 @@ func NewExecutor() (*Executor, error) {
 		return nil, fmt.Errorf("initializing embedder: %w", err)
 	}
 
-	dimension := 768 // Default dimension
-	if cfg.Provider == config.ProviderHuggingFace && cfg.HFModel == "sentence-transformers/all-MiniLM-L6-v2" {
-		dimension = 384
+	dimension := 768
+	if providerType == config.ProviderHuggingFace {
+		modelCheck := cfg.WarmHFModel
+		if modelCheck == "" {
+			modelCheck = cfg.HFModel
+		}
+		if modelCheck == "sentence-transformers/all-MiniLM-L6-v2" {
+			dimension = 384
+		}
 	}
 
 	idx := index.NewVectorIndex(dimension)

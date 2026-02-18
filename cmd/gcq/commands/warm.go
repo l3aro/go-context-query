@@ -141,16 +141,12 @@ func runWarmLocally(path string, cmd *cobra.Command, langFlag string, forceFlag 
 	warmModelFlag, _ := cmd.Flags().GetString("warm-model")
 	modelFlag, _ := cmd.Flags().GetString("model")
 
-	// Determine provider: warm-provider > provider > config.WarmProvider > config.Provider > default
 	providerType := warmProviderFlag
 	if providerType == "" {
 		providerType = providerFlag
 	}
 	if providerType == "" {
 		providerType = string(cfg.WarmProvider)
-	}
-	if providerType == "" {
-		providerType = string(cfg.Provider)
 	}
 	if providerType == "" {
 		providerType = "ollama"
@@ -168,19 +164,13 @@ func runWarmLocally(path string, cmd *cobra.Command, langFlag string, forceFlag 
 			model = cfg.WarmOllamaModel
 		}
 		if model == "" {
-			model = cfg.OllamaModel
-		}
-		if model == "" {
 			model = "nomic-embed-text"
 		}
 		endpoint := cfg.WarmOllamaBaseURL
 		if endpoint == "" {
-			endpoint = cfg.OllamaBaseURL
+			endpoint = "http://localhost:11434"
 		}
 		apiKey := cfg.WarmOllamaAPIKey
-		if apiKey == "" {
-			apiKey = cfg.OllamaAPIKey
-		}
 		provider, err = embed.NewOllamaProvider(&embed.Config{
 			Model:    model,
 			Endpoint: endpoint,
@@ -198,15 +188,9 @@ func runWarmLocally(path string, cmd *cobra.Command, langFlag string, forceFlag 
 			model = cfg.WarmHFModel
 		}
 		if model == "" {
-			model = cfg.HFModel
-		}
-		if model == "" {
 			model = "sentence-transformers/all-MiniLM-L6-v2"
 		}
 		token := cfg.WarmHFToken
-		if token == "" {
-			token = cfg.HFToken
-		}
 		provider, err = embed.NewHuggingFaceProvider(&embed.Config{
 			Model:  model,
 			APIKey: token,

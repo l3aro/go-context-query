@@ -117,35 +117,22 @@ func runSemanticLocally(query string, cmd *cobra.Command) error {
 	}
 	if modelName == "" {
 		if providerType == "ollama" {
-			if cfg.SearchOllamaModel != "" {
-				modelName = cfg.SearchOllamaModel
-			} else if cfg.OllamaModel != "" {
-				modelName = cfg.OllamaModel
-			} else {
+			modelName = cfg.SearchOllamaModel
+			if modelName == "" {
 				modelName = "nomic-embed-text"
 			}
 		} else {
-			if cfg.SearchHFModel != "" {
-				modelName = cfg.SearchHFModel
-			} else if cfg.HFModel != "" {
-				modelName = cfg.HFModel
-			}
+			modelName = cfg.SearchHFModel
 		}
 	}
 
-	// Determine endpoint: use search-specific config, fall back to default
 	var endpoint, apiKey string
 	if providerType == "ollama" {
-		if cfg.SearchOllamaBaseURL != "" {
-			endpoint = cfg.SearchOllamaBaseURL
-		} else {
-			endpoint = cfg.OllamaBaseURL
+		endpoint = cfg.SearchOllamaBaseURL
+		if endpoint == "" {
+			endpoint = "http://localhost:11434"
 		}
-		if cfg.SearchOllamaAPIKey != "" {
-			apiKey = cfg.SearchOllamaAPIKey
-		} else {
-			apiKey = cfg.OllamaAPIKey
-		}
+		apiKey = cfg.SearchOllamaAPIKey
 	}
 
 	// Create the embedding provider
@@ -163,7 +150,7 @@ func runSemanticLocally(query string, cmd *cobra.Command) error {
 	case "huggingface":
 		provider, err = embed.NewHuggingFaceProvider(&embed.Config{
 			Model:  modelName,
-			APIKey: cfg.HFToken,
+			APIKey: cfg.SearchHFToken,
 		})
 		if err != nil {
 			return fmt.Errorf("creating HuggingFace provider: %w", err)

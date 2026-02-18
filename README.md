@@ -17,13 +17,24 @@ make install-bin
 Create `~/.gcq/config.yaml`:
 
 ```yaml
-provider: ollama
-ollama_model: nomic-embed-text
-ollama_base_url: http://localhost:11434
+# Warm (indexing) provider settings
+warm_provider: ollama
+warm_ollama_model: nomic-embed-text
+warm_ollama_base_url: http://localhost:11434
+
+# Search provider settings (optional - inherits from warm if not set)
+search_provider: ollama
+search_ollama_model: nomic-embed-text
+search_ollama_base_url: http://localhost:11434
+
+# Shared settings
 socket_path: /tmp/gcq.sock
 threshold_similarity: 0.7
+threshold_min_score: 0.5
 max_context_chunks: 10
+chunk_overlap: 100
 chunk_size: 512
+verbose: false
 ```
 
 Or use environment variables (see `internal/config/config.go`).

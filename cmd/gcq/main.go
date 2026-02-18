@@ -105,12 +105,19 @@ func runBuild(projectPath, providerType, modelName string) error {
 	case "ollama":
 		model := modelName
 		if model == "" {
-			model = cfg.OllamaModel
+			model = cfg.WarmOllamaModel
+		}
+		if model == "" {
+			model = "nomic-embed-text"
+		}
+		endpoint := cfg.WarmOllamaBaseURL
+		if endpoint == "" {
+			endpoint = "http://localhost:11434"
 		}
 		provider, err = embed.NewOllamaProvider(&embed.Config{
 			Model:    model,
-			Endpoint: cfg.OllamaBaseURL,
-			APIKey:   cfg.OllamaAPIKey,
+			Endpoint: endpoint,
+			APIKey:   cfg.WarmOllamaAPIKey,
 		})
 		if err != nil {
 			return fmt.Errorf("creating Ollama provider: %w", err)
@@ -118,11 +125,14 @@ func runBuild(projectPath, providerType, modelName string) error {
 	case "huggingface":
 		model := modelName
 		if model == "" {
-			model = cfg.HFModel
+			model = cfg.WarmHFModel
+		}
+		if model == "" {
+			model = "sentence-transformers/all-MiniLM-L6-v2"
 		}
 		provider, err = embed.NewHuggingFaceProvider(&embed.Config{
 			Model:  model,
-			APIKey: cfg.HFToken,
+			APIKey: cfg.WarmHFToken,
 		})
 		if err != nil {
 			return fmt.Errorf("creating HuggingFace provider: %w", err)

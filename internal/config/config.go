@@ -18,38 +18,28 @@ const (
 
 // Config holds all configuration for go-context-query
 type Config struct {
-	// Provider specifies which embedding provider to use (for backward compatibility)
-	Provider ProviderType `yaml:"provider" env:"GCQ_PROVIDER"`
+	Provider ProviderType `yaml:"provider,omitempty" env:"GCQ_PROVIDER"`
 
-	// WarmProvider specifies which embedding provider to use for warming/indexing
-	WarmProvider ProviderType `yaml:"warm_provider" env:"GCQ_WARM_PROVIDER"`
-
-	// SearchProvider specifies which embedding provider to use for semantic search
+	WarmProvider   ProviderType `yaml:"warm_provider" env:"GCQ_WARM_PROVIDER"`
 	SearchProvider ProviderType `yaml:"search_provider" env:"GCQ_SEARCH_PROVIDER"`
 
-	// HuggingFace specific settings (used by single provider mode)
-	HFModel string `yaml:"hf_model" env:"GCQ_HF_MODEL"`
-	HFToken string `yaml:"hf_token" env:"GCQ_HF_TOKEN"`
+	HFModel string `yaml:"hf_model,omitempty" env:"GCQ_HF_MODEL"`
+	HFToken string `yaml:"hf_token,omitempty" env:"GCQ_HF_TOKEN"`
 
-	// Warm provider HuggingFace settings
 	WarmHFModel string `yaml:"warm_hf_model" env:"GCQ_WARM_HF_MODEL"`
 	WarmHFToken string `yaml:"warm_hf_token" env:"GCQ_WARM_HF_TOKEN"`
 
-	// Search provider HuggingFace settings
 	SearchHFModel string `yaml:"search_hf_model" env:"GCQ_SEARCH_HF_MODEL"`
 	SearchHFToken string `yaml:"search_hf_token" env:"GCQ_SEARCH_HF_TOKEN"`
 
-	// Ollama specific settings (used by single provider mode)
-	OllamaModel   string `yaml:"ollama_model" env:"GCQ_OLLAMA_MODEL"`
-	OllamaBaseURL string `yaml:"ollama_base_url" env:"GCQ_OLLAMA_BASE_URL"`
-	OllamaAPIKey  string `yaml:"ollama_api_key" env:"GCQ_OLLAMA_API_KEY"`
+	OllamaModel   string `yaml:"ollama_model,omitempty" env:"GCQ_OLLAMA_MODEL"`
+	OllamaBaseURL string `yaml:"ollama_base_url,omitempty" env:"GCQ_OLLAMA_BASE_URL"`
+	OllamaAPIKey  string `yaml:"ollama_api_key,omitempty" env:"GCQ_OLLAMA_API_KEY"`
 
-	// Warm provider Ollama settings
 	WarmOllamaModel   string `yaml:"warm_ollama_model" env:"GCQ_WARM_OLLAMA_MODEL"`
 	WarmOllamaBaseURL string `yaml:"warm_ollama_base_url" env:"GCQ_WARM_OLLAMA_BASE_URL"`
 	WarmOllamaAPIKey  string `yaml:"warm_ollama_api_key" env:"GCQ_WARM_OLLAMA_API_KEY"`
 
-	// Search provider Ollama settings
 	SearchOllamaModel   string `yaml:"search_ollama_model" env:"GCQ_SEARCH_OLLAMA_MODEL"`
 	SearchOllamaBaseURL string `yaml:"search_ollama_base_url" env:"GCQ_SEARCH_OLLAMA_BASE_URL"`
 	SearchOllamaAPIKey  string `yaml:"search_ollama_api_key" env:"GCQ_SEARCH_OLLAMA_API_KEY"`
@@ -73,17 +63,14 @@ type Config struct {
 // DefaultConfig returns a Config with sensible defaults.
 func DefaultConfig() *Config {
 	return &Config{
-		Provider:            ProviderOllama,
-		WarmProvider:        "", // Empty by default - use Provider for backward compatibility
-		SearchProvider:      "", // Empty by default - use Provider for backward compatibility
-		HFModel:             "sentence-transformers/all-MiniLM-L6-v2",
-		HFToken:             "",
+		WarmProvider:        "",
+		SearchProvider:      "",
 		WarmHFModel:         "",
 		WarmHFToken:         "",
 		SearchHFModel:       "",
 		SearchHFToken:       "",
-		OllamaModel:         "nomic-embed-text",
-		OllamaBaseURL:       "http://localhost:11434",
+		OllamaModel:         "",
+		OllamaBaseURL:       "",
 		OllamaAPIKey:        "",
 		WarmOllamaModel:     "",
 		WarmOllamaBaseURL:   "",
