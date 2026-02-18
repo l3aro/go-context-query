@@ -475,14 +475,21 @@ func isPythonBuiltin(name string) bool {
 	return pythonBuiltins[name]
 }
 
+// instanceNames is a set of common instance variable names for O(1) lookup
+var instanceNames = map[string]bool{
+	"self":     true,
+	"this":     true,
+	"that":     true,
+	"it":       true,
+	"obj":      true,
+	"instance": true,
+}
+
 // isLikelyInstanceName checks if a variable name likely refers to an instance
 func isLikelyInstanceName(name string) bool {
-	// Common instance variable patterns
-	instancePatterns := []string{"self", "this", "that", "it", "obj", "instance"}
-	for _, pattern := range instancePatterns {
-		if strings.ToLower(name) == pattern {
-			return true
-		}
+	// Check common instance variable patterns using O(1) map lookup
+	if instanceNames[strings.ToLower(name)] {
+		return true
 	}
 
 	// Single letter names are often instance variables

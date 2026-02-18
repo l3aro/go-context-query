@@ -73,20 +73,30 @@ type ProjectIndex struct {
 
 	// parsedFiles tracks which files have been parsed to avoid re-parsing
 	parsedFiles map[string]bool
+
+	// extensionMap provides O(1) lookup for supported file extensions
+	extensionMap map[string]struct{}
 }
 
 // NewProjectIndex creates a new empty project index.
 // The rootDir should be the project root directory.
 func NewProjectIndex(rootDir string) *ProjectIndex {
+	ext := extractor.NewPythonExtractor()
+	extMap := make(map[string]struct{}, len(ext.FileExtensions()))
+	for _, e := range ext.FileExtensions() {
+		extMap[e] = struct{}{}
+	}
+
 	return &ProjectIndex{
 		rootDir:         rootDir,
 		funcToFile:      make(map[string]string),
 		entries:         make(map[string]FunctionEntry),
 		fileToFunctions: make(map[string][]string),
 		moduleToFiles:   make(map[string]string),
-		extractor:       extractor.NewPythonExtractor(),
+		extractor:       ext,
 		importResolver:  NewPythonImportResolver(rootDir),
 		parsedFiles:     make(map[string]bool),
+		extensionMap:    extMap,
 	}
 }
 
@@ -94,6 +104,10 @@ func NewProjectIndex(rootDir string) *ProjectIndex {
 // Useful for testing or when using a different extractor implementation.
 func (idx *ProjectIndex) WithExtractor(ext extractor.Extractor) *ProjectIndex {
 	idx.extractor = ext
+	idx.extensionMap = make(map[string]struct{}, len(ext.FileExtensions()))
+	for _, e := range ext.FileExtensions() {
+		idx.extensionMap[e] = struct{}{}
+	}
 	return idx
 }
 
@@ -161,12 +175,12 @@ func (idx *ProjectIndex) BuildIndex(filePaths []string) error {
 
 // isSupportedFile checks if a file has a supported extension.
 func (idx *ProjectIndex) isSupportedFile(filePath string) bool {
-	for _, ext := range idx.extractor.FileExtensions() {
-		if strings.HasSuffix(filePath, ext) {
-			return true
-		}
+	if idx.extensionMap == nil {
+		return false
 	}
-	return false
+	ext := filepath.Ext(filePath)
+	_, ok := idx.extensionMap[ext]
+	return ok
 }
 
 // indexFile extracts and indexes all functions from a single file.
