@@ -5,11 +5,21 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 
 	"github.com/l3aro/go-context-query/pkg/types"
 	sitter "github.com/smacker/go-tree-sitter"
 	"github.com/smacker/go-tree-sitter/golang"
 )
+
+// goParserPool is a pool of reusable tree-sitter parsers for Go.
+var goParserPool = sync.Pool{
+	New: func() interface{} {
+		parser := sitter.NewParser()
+		parser.SetLanguage(golang.GetLanguage())
+		return parser
+	},
+}
 
 // GoExtractor implements the Extractor interface for Go files.
 // It uses tree-sitter to parse Go source code and extract structured information
@@ -25,7 +35,6 @@ func NewGoExtractor() Extractor {
 	}
 }
 
-// NewGoParser creates a new tree-sitter parser for Go.
 func NewGoParser() *sitter.Parser {
 	parser := sitter.NewParser()
 	parser.SetLanguage(golang.GetLanguage())
@@ -58,20 +67,16 @@ func (e *GoExtractor) Extract(filePath string) (*types.ModuleInfo, error) {
 
 	root := tree.RootNode()
 
-	// Extract all constructs
-	imports := e.extractImports(root, content)
-	functions := e.extractFunctions(root, content)
-	methods := e.extractMethods(root, content)
-	structs := e.extractStructs(root, content)
-	interfaces := e.extractInterfaces(root, content)
+	// Single-pass extraction: traverse AST once and collect all constructs
+	state := &ExtractorState{}
+	e.extractAll(root, content, state)
 
 	// Combine functions and methods
-	allFunctions := append(functions, methods...)
+	allFunctions := append(state.functions, state.methods...)
 
 	// Combine structs and interfaces into a single list for Classes
-	// (using Class as a container for named types)
-	classes := make([]types.Class, 0, len(structs)+len(interfaces))
-	for _, s := range structs {
+	classes := make([]types.Class, 0, len(state.structs)+len(state.interfaces))
+	for _, s := range state.structs {
 		classes = append(classes, types.Class{
 			Name:       s.Name,
 			Docstring:  s.Docstring,
@@ -79,7 +84,7 @@ func (e *GoExtractor) Extract(filePath string) (*types.ModuleInfo, error) {
 			LineNumber: s.LineNumber,
 		})
 	}
-	for _, i := range interfaces {
+	for _, i := range state.interfaces {
 		classes = append(classes, types.Class{
 			Name:       i.Name,
 			Docstring:  i.Docstring,
@@ -92,9 +97,9 @@ func (e *GoExtractor) Extract(filePath string) (*types.ModuleInfo, error) {
 		Path:       filePath,
 		Functions:  allFunctions,
 		Classes:    classes,
-		Imports:    imports,
-		Structs:    structs,
-		Interfaces: interfaces,
+		Imports:    state.imports,
+		Structs:    state.structs,
+		Interfaces: state.interfaces,
 		CallGraph: types.CallGraph{
 			Edges: []types.CallGraphEdge{},
 		},
@@ -772,16 +777,14 @@ func (e *GoExtractor) ExtractFromBytes(content []byte, filePath string) (*types.
 
 	root := tree.RootNode()
 
-	imports := e.extractImports(root, content)
-	functions := e.extractFunctions(root, content)
-	methods := e.extractMethods(root, content)
-	structs := e.extractStructs(root, content)
-	interfaces := e.extractInterfaces(root, content)
+	// Single-pass extraction
+	state := &ExtractorState{}
+	e.extractAll(root, content, state)
 
-	allFunctions := append(functions, methods...)
+	allFunctions := append(state.functions, state.methods...)
 
-	classes := make([]types.Class, 0, len(structs)+len(interfaces))
-	for _, s := range structs {
+	classes := make([]types.Class, 0, len(state.structs)+len(state.interfaces))
+	for _, s := range state.structs {
 		classes = append(classes, types.Class{
 			Name:       s.Name,
 			Docstring:  s.Docstring,
@@ -789,7 +792,7 @@ func (e *GoExtractor) ExtractFromBytes(content []byte, filePath string) (*types.
 			LineNumber: s.LineNumber,
 		})
 	}
-	for _, i := range interfaces {
+	for _, i := range state.interfaces {
 		classes = append(classes, types.Class{
 			Name:       i.Name,
 			Docstring:  i.Docstring,
@@ -802,9 +805,9 @@ func (e *GoExtractor) ExtractFromBytes(content []byte, filePath string) (*types.
 		Path:       filePath,
 		Functions:  allFunctions,
 		Classes:    classes,
-		Imports:    imports,
-		Structs:    structs,
-		Interfaces: interfaces,
+		Imports:    state.imports,
+		Structs:    state.structs,
+		Interfaces: state.interfaces,
 		CallGraph: types.CallGraph{
 			Edges: []types.CallGraphEdge{},
 		},
@@ -816,4 +819,161 @@ type TypeAlias struct {
 	Name       string
 	Type       string
 	LineNumber int
+}
+
+// ExtractorState holds all extraction results from a single-pass AST traversal.
+type ExtractorState struct {
+	imports    []types.Import
+	functions  []types.Function
+	methods    []types.Function
+	structs    []types.Struct
+	interfaces []types.Interface
+}
+
+// extractAll performs a single-pass AST traversal to extract all constructs.
+// This is more efficient than calling separate extract functions that each walk the AST.
+func (e *GoExtractor) extractAll(node *sitter.Node, content []byte, state *ExtractorState) {
+	if node == nil {
+		return
+	}
+
+	switch node.Type() {
+	case "import_declaration":
+		e.extractImportDeclaration(node, content, state)
+	case "import_spec_list":
+		e.extractImportSpecList(node, content, state)
+	case "function_declaration":
+		if fn := e.parseFunctionDeclaration(node, content, false); fn != nil {
+			state.functions = append(state.functions, *fn)
+		}
+	case "method_declaration":
+		if fn := e.parseMethodDeclaration(node, content); fn != nil {
+			state.methods = append(state.methods, *fn)
+		}
+	case "type_declaration":
+		e.extractTypeDeclaration(node, content, state)
+	}
+
+	// Recurse to children
+	for i := 0; i < int(node.ChildCount()); i++ {
+		e.extractAll(node.Child(i), content, state)
+	}
+}
+
+// extractImportDeclaration extracts imports from an import_declaration node.
+func (e *GoExtractor) extractImportDeclaration(node *sitter.Node, content []byte, state *ExtractorState) {
+	if node == nil {
+		return
+	}
+
+	lineNumber := int(node.StartPoint().Row) + 1
+
+	for i := 0; i < int(node.ChildCount()); i++ {
+		child := node.Child(i)
+		if child == nil {
+			continue
+		}
+
+		switch child.Type() {
+		case "import_spec":
+			spec := e.parseImportSpec(child, content)
+			if spec != nil {
+				state.imports = append(state.imports, types.Import{
+					Module:     spec.Module,
+					Names:      spec.Names,
+					IsFrom:     false,
+					LineNumber: lineNumber,
+				})
+			}
+		case "import_spec_list":
+			// Grouped imports handled separately
+		}
+	}
+}
+
+// extractImportSpecList extracts imports from an import_spec_list node.
+func (e *GoExtractor) extractImportSpecList(node *sitter.Node, content []byte, state *ExtractorState) {
+	if node == nil {
+		return
+	}
+
+	for i := 0; i < int(node.ChildCount()); i++ {
+		child := node.Child(i)
+		if child != nil && child.Type() == "import_spec" {
+			spec := e.parseImportSpec(child, content)
+			if spec != nil {
+				state.imports = append(state.imports, types.Import{
+					Module:     spec.Module,
+					Names:      spec.Names,
+					IsFrom:     false,
+					LineNumber: int(child.StartPoint().Row) + 1,
+				})
+			}
+		}
+	}
+}
+
+// extractTypeDeclaration extracts structs and interfaces from a type_declaration node.
+func (e *GoExtractor) extractTypeDeclaration(node *sitter.Node, content []byte, state *ExtractorState) {
+	if node == nil {
+		return
+	}
+
+	lineNumber := int(node.StartPoint().Row) + 1
+
+	// type_declaration has a type_spec child
+	for i := 0; i < int(node.ChildCount()); i++ {
+		child := node.Child(i)
+		if child == nil || child.Type() != "type_spec" {
+			continue
+		}
+
+		var name string
+		var fields []string
+		var methods []types.Method
+		var isStruct bool
+		var isInterface bool
+
+		// Parse type_spec children
+		for j := 0; j < int(child.ChildCount()); j++ {
+			specChild := child.Child(j)
+			if specChild == nil {
+				continue
+			}
+
+			switch specChild.Type() {
+			case "type_identifier":
+				if name == "" {
+					name = e.nodeText(specChild, content)
+				} else {
+					// Second type_identifier means it's a type alias
+					return
+				}
+			case "struct_type":
+				fields = e.parseStructFields(specChild, content)
+				isStruct = true
+			case "interface_type":
+				methods = e.parseInterfaceMethods(specChild, content)
+				isInterface = true
+			}
+		}
+
+		if name == "" {
+			continue
+		}
+
+		if isStruct {
+			state.structs = append(state.structs, types.Struct{
+				Name:       name,
+				Fields:     fields,
+				LineNumber: lineNumber,
+			})
+		} else if isInterface {
+			state.interfaces = append(state.interfaces, types.Interface{
+				Name:       name,
+				Methods:    methods,
+				LineNumber: lineNumber,
+			})
+		}
+	}
 }
