@@ -3,7 +3,6 @@ package commands
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 
 	"github.com/l3aro/go-context-query/internal/config"
 	"github.com/l3aro/go-context-query/internal/healthcheck"
@@ -44,25 +43,11 @@ func loadConfigWithPath() (*config.Config, string, error) {
 	projectConfigPath := ".gcq/config.yaml"
 	projectExists := fileExists(projectConfigPath)
 
-	home, _ := os.UserHomeDir()
-	globalConfigPath := ""
-	if home != "" {
-		globalConfigPath = filepath.Join(home, ".gcq", "config.yaml")
-	}
-	globalExists := fileExists(globalConfigPath)
-
 	var effectivePath string
 	if projectExists {
 		effectivePath = projectConfigPath
-	} else if globalExists {
-		effectivePath = globalConfigPath
 	} else {
-		return nil, "", fmt.Errorf("no configuration found\n"+
-			"Checked paths:\n"+
-			"  - %s (project)\n"+
-			"  - %s (global)\n"+
-			"Run 'gcq init' to create a configuration file",
-			projectConfigPath, globalConfigPath)
+		return nil, "", fmt.Errorf("no configuration found. Run 'gcq init' to create a project config at .gcq/config.yaml")
 	}
 
 	cfg, err := config.LoadFromFile(effectivePath)

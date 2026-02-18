@@ -52,21 +52,13 @@ func Check(cfg *config.Config, savedPath string, effectivePath string) (*HealthC
 	return result, nil
 }
 
-// scopeFromPath determines "global" or "project" scope from a config file path.
-// Returns empty string if path is empty.
+// scopeFromPath determines the scope from a config file path.
+// Returns empty string if path is empty, otherwise returns "project".
+// Global config is no longer supported.
 func scopeFromPath(path string) string {
 	if path == "" {
 		return ""
 	}
-
-	home, err := os.UserHomeDir()
-	if err == nil {
-		globalDir := filepath.Join(home, ".gcq")
-		if strings.HasPrefix(path, globalDir) {
-			return "global"
-		}
-	}
-
 	return "project"
 }
 

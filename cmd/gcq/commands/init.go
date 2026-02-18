@@ -20,7 +20,7 @@ var initCmd = &cobra.Command{
 Creates a config file with warm model (for indexing) and search model settings.
 
 Use non-interactive mode with flags:
-  gcq init --warm-provider ollama --warm-model nomic-embed-text --location project
+  gcq init --warm-provider ollama --warm-model nomic-embed-text
 
 For full flag list, run: gcq init --help`,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -274,35 +274,8 @@ func runInit(cmd *cobra.Command) error {
 	}
 
 	// === SECTION 3: Config Location ===
-	var saveLocationChoice string
-	form = huh.NewForm(
-		huh.NewGroup(
-			huh.NewSelect[string]().
-				Title("Save Configuration").
-				Description("Where to save the configuration file?").
-				Options(
-					huh.NewOption("Global (~/.gcq/config.yaml)", "global"),
-					huh.NewOption("Project (./.gcq/config.yaml)", "project"),
-				).
-				Value(&saveLocationChoice),
-		),
-	)
-	err = form.Run()
-	if err != nil {
-		return fmt.Errorf("interactive prompt failed: %w", err)
-	}
-
-	// Determine save path
-	var configPath string
-	if saveLocationChoice == "global" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return fmt.Errorf("getting home directory: %w", err)
-		}
-		configPath = filepath.Join(home, ".gcq", "config.yaml")
-	} else {
-		configPath = ".gcq/config.yaml"
-	}
+	// Config is always saved to project path
+	configPath := ".gcq/config.yaml"
 
 	// Check if config already exists
 	if _, err := os.Stat(configPath); err == nil {
@@ -407,13 +380,9 @@ func runInit(cmd *cobra.Command) error {
 	}
 
 	// Display results
-	fmt.Printf("\nConfig Scope: %s\n", result.SavedScope)
-	if result.SavedScope == "global" {
-		fmt.Printf("Config Path: %s\n", configPath)
-	} else {
-		absPath, _ := filepath.Abs(configPath)
-		fmt.Printf("Config Path: %s\n", absPath)
-	}
+	fmt.Printf("\nConfig Scope: project\n")
+	absPath, _ := filepath.Abs(configPath)
+	fmt.Printf("Config Path: %s\n", absPath)
 
 	// Warm model status
 	fmt.Printf("\nWarm Model Status: %s\n", result.WarmModel.Status)
@@ -463,6 +432,14 @@ func runInitNonInteractive(
 	location := locationFlag
 	if location == "" {
 		location = "project"
+	}
+
+	if location == "global" {
+		return fmt.Errorf("global config location is no longer supported; config is always saved to project path (.gcq/config.yaml)")
+	}
+
+	if location != "project" {
+		return fmt.Errorf("invalid --location value: %s (must be 'project')", location)
 	}
 
 	if warmProvider == "" {
@@ -521,16 +498,7 @@ func runInitNonInteractive(
 		}
 	}
 
-	var configPath string
-	if location == "global" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return fmt.Errorf("getting home directory: %w", err)
-		}
-		configPath = filepath.Join(home, ".gcq", "config.yaml")
-	} else {
-		configPath = ".gcq/config.yaml"
-	}
+	configPath := ".gcq/config.yaml"
 
 	if _, err := os.Stat(configPath); err == nil && !yesFlag {
 		return fmt.Errorf("config file already exists at %s\nUse --yes to overwrite", configPath)
@@ -592,11 +560,9 @@ func runInitNonInteractive(
 	}
 	fmt.Printf("Configuration saved to: %s\n", configPath)
 
-	if location == "project" {
-		added, err := updateGitignore(configPath)
-		if err == nil && added {
-			fmt.Println("Added .gcq to .gitignore")
-		}
+	added, err := updateGitignore(configPath)
+	if err == nil && added {
+		fmt.Println("Added .gcq to .gitignore")
 	}
 
 	if skipHealthCheck {
@@ -616,13 +582,9 @@ func runInitNonInteractive(
 		return fmt.Errorf("health check failed: %w", err)
 	}
 
-	fmt.Printf("\nConfig Scope: %s\n", result.SavedScope)
-	if result.SavedScope == "global" {
-		fmt.Printf("Config Path: %s\n", configPath)
-	} else {
-		absPath, _ := filepath.Abs(configPath)
-		fmt.Printf("Config Path: %s\n", absPath)
-	}
+	fmt.Printf("\nConfig Scope: project\n")
+	absPath, _ := filepath.Abs(configPath)
+	fmt.Printf("Config Path: %s\n", absPath)
 
 	fmt.Printf("\nWarm Model Status: %s\n", result.WarmModel.Status)
 	fmt.Printf("  Provider: %s\n", result.WarmModel.Provider)
@@ -699,7 +661,7 @@ func init() {
 	initCmd.Flags().String("search-model", "", "Search model name (optional, defaults to warm)")
 	initCmd.Flags().String("search-base-url", "", "Search base URL for Ollama (optional)")
 	initCmd.Flags().String("search-api-key", "", "Search API key (optional)")
-	initCmd.Flags().String("location", "", "Config location: global or project (default: project)")
+	initCmd.Flags().String("location", "", "Config location: project (default: project)")
 	initCmd.Flags().BoolP("yes", "y", false, "Skip all confirmations, overwrite if exists")
 	initCmd.Flags().Bool("skip-health-check", false, "Skip health check after initialization")
 

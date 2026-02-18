@@ -76,16 +76,16 @@ func runSemanticLocally(query string, cmd *cobra.Command) error {
 		return fmt.Errorf("finding project root: %w", err)
 	}
 
-	// Load the semantic index
-	vecIndex, metadata, err := semantic.LoadIndex(rootDir)
-	if err != nil {
-		return fmt.Errorf("loading semantic index: %w\nRun 'gcq warm' first to build the index", err)
-	}
-
 	// Load config
 	cfg, err := config.Load()
 	if err != nil {
 		return fmt.Errorf("loading config: %w", err)
+	}
+
+	// Load the semantic index
+	vecIndex, metadata, err := semantic.LoadIndex(rootDir)
+	if err != nil {
+		return fmt.Errorf("loading semantic index: %w\nRun 'gcq warm' first to build the index", err)
 	}
 
 	// Get CLI flags

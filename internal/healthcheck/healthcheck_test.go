@@ -75,7 +75,8 @@ func TestScopeFromPath(t *testing.T) {
 		expected string
 	}{
 		{"empty path", "", ""},
-		{"global path", globalPath, "global"},
+		// Global config is no longer supported - all paths return "project"
+		{"global path", globalPath, "project"},
 		{"project path", "/project/.gcq/config.yaml", "project"},
 		{"relative project path", ".gcq/config.yaml", "project"},
 	}
