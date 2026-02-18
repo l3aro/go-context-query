@@ -816,10 +816,13 @@ func (b *Builder) Build() (*index.VectorIndex, *IndexMetadata, error) {
 	for i, unit := range units {
 		unitID := fmt.Sprintf("%s:%s", unit.FilePath, unit.Name)
 
-		// Convert CodeUnit to EmbeddingUnit for storage
 		embeddingUnit := types.EmbeddingUnit{
 			L1Data: types.ModuleInfo{
-				Path: unit.FilePath,
+				Path:       unit.FilePath,
+				LineNumber: unit.LineNumber,
+				Signature:  unit.Signature,
+				Docstring:  unit.Docstring,
+				Type:       unit.Type,
 			},
 		}
 

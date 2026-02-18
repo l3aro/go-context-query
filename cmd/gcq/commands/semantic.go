@@ -71,7 +71,10 @@ func runSemanticLocally(query string, cmd *cobra.Command) error {
 		return fmt.Errorf("getting current directory: %w", err)
 	}
 
-	rootDir := findProjectRoot(cwd)
+	rootDir, err := findProjectRoot(cwd)
+	if err != nil {
+		return fmt.Errorf("finding project root: %w", err)
+	}
 
 	// Load the semantic index
 	vecIndex, metadata, err := semantic.LoadIndex(rootDir)
@@ -97,39 +100,51 @@ func runSemanticLocally(query string, cmd *cobra.Command) error {
 		k = 10
 	}
 
-	// Determine provider: search-provider flag > provider flag > metadata.SearchProvider > metadata.GetProvider() > config > default
 	providerType := searchProviderFlag
 	if providerType == "" {
 		providerType = providerFlag
 	}
 	if providerType == "" {
-		providerType = metadata.SearchProvider
-		if providerType == "" {
-			providerType = metadata.GetProvider()
-		}
-	}
-	if providerType == "" {
-		providerType = string(cfg.Provider)
+		providerType = string(cfg.EffectiveSearchProvider())
 		if providerType == "" {
 			providerType = "ollama"
 		}
 	}
 
-	// Determine model: search-model flag > model flag > metadata.SearchModel > metadata.GetModel() > config > default
 	modelName := searchModelFlag
 	if modelName == "" {
 		modelName = modelFlag
 	}
 	if modelName == "" {
-		modelName = metadata.SearchModel
-		if modelName == "" {
-			modelName = metadata.GetModel()
+		if providerType == "ollama" {
+			if cfg.SearchOllamaModel != "" {
+				modelName = cfg.SearchOllamaModel
+			} else if cfg.OllamaModel != "" {
+				modelName = cfg.OllamaModel
+			} else {
+				modelName = "nomic-embed-text"
+			}
+		} else {
+			if cfg.SearchHFModel != "" {
+				modelName = cfg.SearchHFModel
+			} else if cfg.HFModel != "" {
+				modelName = cfg.HFModel
+			}
 		}
 	}
-	if modelName == "" {
-		modelName = cfg.OllamaModel
-		if modelName == "" {
-			modelName = "nomic-embed-text"
+
+	// Determine endpoint: use search-specific config, fall back to default
+	var endpoint, apiKey string
+	if providerType == "ollama" {
+		if cfg.SearchOllamaBaseURL != "" {
+			endpoint = cfg.SearchOllamaBaseURL
+		} else {
+			endpoint = cfg.OllamaBaseURL
+		}
+		if cfg.SearchOllamaAPIKey != "" {
+			apiKey = cfg.SearchOllamaAPIKey
+		} else {
+			apiKey = cfg.OllamaAPIKey
 		}
 	}
 
@@ -139,8 +154,8 @@ func runSemanticLocally(query string, cmd *cobra.Command) error {
 	case "ollama":
 		provider, err = embed.NewOllamaProvider(&embed.Config{
 			Model:    modelName,
-			Endpoint: cfg.OllamaBaseURL,
-			APIKey:   cfg.OllamaAPIKey,
+			Endpoint: endpoint,
+			APIKey:   apiKey,
 		})
 		if err != nil {
 			return fmt.Errorf("creating Ollama provider: %w", err)
@@ -226,7 +241,14 @@ func printSemantic(output SemanticOutput) {
 	fmt.Printf("Found %d result(s):\n\n", len(output.Results))
 
 	for i, r := range output.Results {
-		relPath, _ := filepath.Rel(output.RootDir, r.FilePath)
+		relPath := r.FilePath
+		if filepath.IsAbs(r.FilePath) {
+			var err error
+			relPath, err = filepath.Rel(output.RootDir, r.FilePath)
+			if err != nil {
+				relPath = r.FilePath
+			}
+		}
 		fmt.Printf("%d. %s:%d\n", i+1, relPath, r.LineNumber)
 		fmt.Printf("   Name: %s (type: %s)\n", r.Name, r.Type)
 		fmt.Printf("   Score: %.3f\n", r.Score)

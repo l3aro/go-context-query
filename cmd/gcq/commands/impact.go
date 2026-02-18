@@ -62,7 +62,10 @@ func runImpactLocally(funcName string, cmd *cobra.Command) error {
 		return fmt.Errorf("getting current directory: %w", err)
 	}
 
-	rootDir := findProjectRoot(cwd)
+	rootDir, err := findProjectRoot(cwd)
+	if err != nil {
+		return fmt.Errorf("finding project root: %w", err)
+	}
 
 	// Scan project files
 	sc := scanner.New(scanner.DefaultOptions())

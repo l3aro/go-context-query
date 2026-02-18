@@ -56,8 +56,10 @@ var contextCmd = &cobra.Command{
 			return fmt.Errorf("path is a directory, expected a file: %s", entryPath)
 		}
 
-		// Find project root (go up until we find a reasonable project root)
-		rootDir := findProjectRoot(absPath)
+		rootDir, err := findProjectRoot(absPath)
+		if err != nil {
+			return fmt.Errorf("finding project root: %w", err)
+		}
 
 		// Scan project files
 		sc := scanner.New(scanner.DefaultOptions())
@@ -137,31 +139,37 @@ func init() {
 	contextCmd.Flags().BoolP("json", "j", false, "Output as JSON")
 }
 
-// findProjectRoot finds the project root directory
-func findProjectRoot(filePath string) string {
-	dir := filepath.Dir(filePath)
-
-	// Look for common project markers
-	markers := []string{"go.mod", "pyproject.toml", "package.json", "requirements.txt", ".git"}
-
-	for {
-		for _, marker := range markers {
-			if _, err := os.Stat(filepath.Join(dir, marker)); err == nil {
-				return dir
-			}
-		}
-
-		// Go up one level
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			// Reached root
-			break
-		}
-		dir = parent
+// findProjectRoot returns the project root directory.
+// It assumes the path where the command is run is the root.
+// Creates .gcq folder if it doesn't exist.
+func findProjectRoot(filePath string) (string, error) {
+	// If filePath is ".", use current directory
+	if filePath == "." {
+		absPath, _ := filepath.Abs(filePath)
+		filePath = absPath
 	}
 
-	// Default to the directory containing the file
-	return filepath.Dir(filePath)
+	// Get info to determine if it's a file or directory
+	info, err := os.Stat(filePath)
+	if err != nil {
+		return "", err
+	}
+
+	// If it's a directory, use it as root; otherwise use its parent
+	rootDir := filePath
+	if !info.IsDir() {
+		rootDir = filepath.Dir(filePath)
+	}
+
+	// Create .gcq folder if it doesn't exist
+	gcqDir := filepath.Join(rootDir, ".gcq")
+	if _, err := os.Stat(gcqDir); os.IsNotExist(err) {
+		if err := os.MkdirAll(gcqDir, 0755); err != nil {
+			return "", fmt.Errorf("creating .gcq directory: %w", err)
+		}
+	}
+
+	return rootDir, nil
 }
 
 // getRelevantModules returns modules relevant to the entry point

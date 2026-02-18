@@ -76,7 +76,7 @@ func checkWarmModel(cfg *config.Config) ModelStatus {
 
 	switch provider {
 	case config.ProviderOllama:
-		return checkOllamaModel(cfg.WarmOllamaModel, cfg.WarmOllamaBaseURL)
+		return checkOllamaModel(cfg.WarmOllamaModel, cfg.WarmOllamaBaseURL, cfg.WarmOllamaAPIKey)
 	case config.ProviderHuggingFace:
 		return checkHuggingFaceModel(cfg.WarmHFModel)
 	default:
@@ -114,7 +114,7 @@ func checkSearchModel(cfg *config.Config, warmStatus ModelStatus) ModelStatus {
 
 	switch provider {
 	case config.ProviderOllama:
-		return checkOllamaModel(cfg.SearchOllamaModel, cfg.SearchOllamaBaseURL)
+		return checkOllamaModel(cfg.SearchOllamaModel, cfg.SearchOllamaBaseURL, cfg.SearchOllamaAPIKey)
 	case config.ProviderHuggingFace:
 		return checkHuggingFaceModel(cfg.SearchHFModel)
 	default:
@@ -153,8 +153,8 @@ func isSameAsWarm(cfg *config.Config) bool {
 }
 
 // checkOllamaModel pings the Ollama base URL to verify the endpoint is reachable.
-// It does NOT download or pull models.
-func checkOllamaModel(model, baseURL string) ModelStatus {
+// It does NOT download or pull models. It supports bearer token authentication.
+func checkOllamaModel(model, baseURL, apiKey string) ModelStatus {
 	status := ModelStatus{
 		Provider: "ollama",
 		Model:    model,
@@ -176,6 +176,11 @@ func checkOllamaModel(model, baseURL string) ModelStatus {
 		status.Status = "error"
 		status.Error = fmt.Sprintf("invalid URL: %v", err)
 		return status
+	}
+
+	// Add bearer token authentication if API key is provided
+	if apiKey != "" {
+		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", apiKey))
 	}
 
 	resp, err := http.DefaultClient.Do(req)

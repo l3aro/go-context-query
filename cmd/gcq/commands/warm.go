@@ -114,24 +114,19 @@ func runWarmViaDaemon(path string, cmd *cobra.Command, langFlag string, forceFla
 }
 
 func runWarmLocally(path string, cmd *cobra.Command, langFlag string, forceFlag bool, tracker *dirty.Tracker) error {
-	// Get absolute path
 	absPath, err := filepath.Abs(path)
 	if err != nil {
 		return fmt.Errorf("getting absolute path: %w", err)
 	}
 
 	// Check if path exists
-	info, err := os.Stat(absPath)
-	if err != nil {
+	if _, err := os.Stat(absPath); err != nil {
 		return fmt.Errorf("stat path: %w", err)
 	}
 
-	// Determine root dir
-	rootDir := absPath
-	if info.IsDir() {
-		rootDir = absPath
-	} else {
-		rootDir = filepath.Dir(absPath)
+	rootDir, err := findProjectRoot(absPath)
+	if err != nil {
+		return fmt.Errorf("finding project root: %w", err)
 	}
 
 	// Load config
@@ -259,7 +254,7 @@ func runWarmLocally(path string, cmd *cobra.Command, langFlag string, forceFlag 
 			Success:       true,
 			UnitsCount:    vecIndex.Count(),
 			Dimension:     vecIndex.Dimension(),
-			Model:         metadata.Model,
+			Model:         metadata.WarmModel,
 			CacheDir:      filepath.Join(rootDir, ".gcq", "cache", "semantic"),
 			Message:       fmt.Sprintf("Indexed %d code units", vecIndex.Count()),
 			ProcessedLang: processedLang,

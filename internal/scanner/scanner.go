@@ -224,9 +224,8 @@ func (s *Scanner) isDefaultExcluded(name string) bool {
 	return false
 }
 
-// loadIgnorePatterns loads ignore patterns from .gcqignore file in the given directory.
-func (s *Scanner) loadIgnorePatterns(dir string) ([]IgnorePattern, error) {
-	ignorePath := filepath.Join(dir, s.opts.IgnoreFileName)
+// loadPatternsFromFile loads ignore patterns from a single file.
+func (s *Scanner) loadPatternsFromFile(ignorePath string) ([]IgnorePattern, error) {
 	file, err := os.Open(ignorePath)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -240,7 +239,6 @@ func (s *Scanner) loadIgnorePatterns(dir string) ([]IgnorePattern, error) {
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
-		// Skip empty lines and comments
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
@@ -248,6 +246,33 @@ func (s *Scanner) loadIgnorePatterns(dir string) ([]IgnorePattern, error) {
 	}
 
 	return patterns, scanner.Err()
+}
+
+// loadIgnorePatterns loads ignore patterns from .gcqignore and .gitignore files.
+func (s *Scanner) loadIgnorePatterns(dir string) ([]IgnorePattern, error) {
+	var allPatterns []IgnorePattern
+
+	// Load .gcqignore first
+	gcqignorePath := filepath.Join(dir, s.opts.IgnoreFileName)
+	patterns, err := s.loadPatternsFromFile(gcqignorePath)
+	if err != nil {
+		return nil, err
+	}
+	if len(patterns) > 0 {
+		allPatterns = append(allPatterns, patterns...)
+	}
+
+	// Load .gitignore
+	gitignorePath := filepath.Join(dir, ".gitignore")
+	patterns, err = s.loadPatternsFromFile(gitignorePath)
+	if err != nil {
+		return nil, err
+	}
+	if len(patterns) > 0 {
+		allPatterns = append(allPatterns, patterns...)
+	}
+
+	return allPatterns, nil
 }
 
 // findIgnoreFiles finds all .gcqignore files in the directory tree.

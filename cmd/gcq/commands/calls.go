@@ -3,7 +3,6 @@ package commands
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 	"path/filepath"
 
 	"github.com/l3aro/go-context-query/internal/daemon"
@@ -73,16 +72,9 @@ func runCallsLocally(path string, cmd *cobra.Command) error {
 		return fmt.Errorf("getting absolute path: %w", err)
 	}
 
-	// Check if path exists
-	info, err := os.Stat(absPath)
+	rootDir, err := findProjectRoot(absPath)
 	if err != nil {
-		return fmt.Errorf("stat path: %w", err)
-	}
-
-	// Find project root
-	rootDir := findProjectRoot(absPath)
-	if info.IsDir() {
-		rootDir = absPath
+		return fmt.Errorf("finding project root: %w", err)
 	}
 
 	// Scan project files

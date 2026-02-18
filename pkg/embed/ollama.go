@@ -65,10 +65,8 @@ func NewOllamaProvider(cfg *Config) (*OllamaProvider, error) {
 	// but supports bearer token authentication for remote instances
 
 	return &OllamaProvider{
-		config: cfg,
-		httpClient: &http.Client{
-			Timeout: 120, // 2 minutes timeout
-		},
+		config:     cfg,
+		httpClient: http.DefaultClient,
 	}, nil
 }
 
