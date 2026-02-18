@@ -8,6 +8,7 @@ import (
 	"math"
 	"os"
 	"sort"
+	"sync"
 
 	"github.com/l3aro/go-context-query/pkg/types"
 	"github.com/vmihailenco/msgpack/v5"
@@ -103,7 +104,8 @@ func cosineSimilarityWithNorm(a, b []float32) float32 {
 		normB += b[i] * b[i]
 	}
 
-	norm := float32(float64(normA) * float64(normB))
+	// Compute proper normalization: sqrt(sum_a^2) * sqrt(sum_b^2)
+	norm := float32(math.Sqrt(float64(normA)) * math.Sqrt(float64(normB)))
 	if norm == 0 {
 		return 0
 	}
@@ -132,22 +134,41 @@ func (v *VectorIndex) Search(query []float32, k int) ([]SearchResult, error) {
 		}
 	}
 
-	// Compute similarity for all vectors
+	// Compute similarity for all vectors in parallel
 	type scoredIndex struct {
 		index int
 		score float32
 	}
 
-	scores := make([]scoredIndex, v.Count())
-	for i := 0; i < v.Count(); i++ {
-		start := i * v.dimension
-		end := start + v.dimension
-		vector := v.vectors[start:end]
+	count := v.Count()
+	scores := make([]scoredIndex, count)
+	resultsChan := make(chan scoredIndex, count)
+	var wg sync.WaitGroup
 
-		scores[i] = scoredIndex{
-			index: i,
-			score: cosineSimilarity(query, vector),
-		}
+	for i := 0; i < count; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			start := i * v.dimension
+			end := start + v.dimension
+			vector := v.vectors[start:end]
+
+			resultsChan <- scoredIndex{
+				index: i,
+				score: cosineSimilarity(query, vector),
+			}
+		}(i)
+	}
+
+	// Wait for all goroutines to complete
+	go func() {
+		wg.Wait()
+		close(resultsChan)
+	}()
+
+	// Collect results
+	for scored := range resultsChan {
+		scores[scored.index] = scored
 	}
 
 	// Sort by score descending
