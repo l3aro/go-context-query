@@ -3,7 +3,18 @@ package scanner
 import (
 	"path/filepath"
 	"strings"
+	"sync"
 )
+
+const maxCacheSize = 10000
+
+// matchCache is a package-level cache for pattern match results.
+// Thread-safe using RWMutex.
+var matchCache = struct {
+	sync.RWMutex
+	m     map[string]bool
+	order []string // Track insertion order for eviction
+}{m: make(map[string]bool), order: []string{}}
 
 // IgnorePattern represents a single gitignore-style pattern.
 type IgnorePattern struct {
@@ -46,29 +57,58 @@ func ParseIgnorePattern(pattern string) IgnorePattern {
 // Returns true if the path should be ignored (matches and is not negation),
 // or if it matches a negation pattern (to be handled by caller).
 func (p IgnorePattern) Match(path string) bool {
+	cacheKey := p.pattern + "::" + path
+
+	// Check cache first
+	matchCache.RLock()
+	if result, ok := matchCache.m[cacheKey]; ok {
+		matchCache.RUnlock()
+		return result
+	}
+	matchCache.RUnlock()
+
 	path = filepath.ToSlash(path)
 
 	// For directory patterns, check if the path is within the directory
+	var result bool
 	if p.isDirectory {
-		return p.matchDirectory(path)
-	}
+		result = p.matchDirectory(path)
+	} else if strings.Contains(p.pattern, "*") || strings.Contains(p.pattern, "?") || strings.Contains(p.pattern, "[") {
+		// Handle glob patterns
+		result = p.matchGlob(path)
+	} else {
+		// Split path into segments
+		pathSegments := strings.Split(path, "/")
 
-	// Handle glob patterns
-	if strings.Contains(p.pattern, "*") || strings.Contains(p.pattern, "?") || strings.Contains(p.pattern, "[") {
-		return p.matchGlob(path)
-	}
-
-	// Split path into segments
-	pathSegments := strings.Split(path, "/")
-
-	// Try matching at each possible starting position
-	for startIdx := 0; startIdx < len(pathSegments); startIdx++ {
-		if p.matchSegments(pathSegments[startIdx:]) {
-			return true
+		// Try matching at each possible starting position
+		result = false
+		for startIdx := 0; startIdx < len(pathSegments); startIdx++ {
+			if p.matchSegments(pathSegments[startIdx:]) {
+				result = true
+				break
+			}
 		}
 	}
 
-	return false
+	// Cache the result
+	matchCache.Lock()
+	if len(matchCache.m) >= maxCacheSize {
+		// Evict oldest entries (first 10% of cache)
+		evictCount := maxCacheSize / 10
+		if evictCount < 1 {
+			evictCount = 1
+		}
+		for i := 0; i < evictCount && len(matchCache.order) > 0; i++ {
+			oldest := matchCache.order[0]
+			matchCache.order = matchCache.order[1:]
+			delete(matchCache.m, oldest)
+		}
+	}
+	matchCache.m[cacheKey] = result
+	matchCache.order = append(matchCache.order, cacheKey)
+	matchCache.Unlock()
+
+	return result
 }
 
 // IsNegation returns true if this pattern is a negation pattern.
