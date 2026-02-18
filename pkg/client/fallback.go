@@ -31,7 +31,7 @@ type Executor struct {
 func NewExecutor() (*Executor, error) {
 	cfg := config.DefaultConfig()
 
-	providerType := cfg.WarmProvider
+	providerType := cfg.Warm.Provider
 	if providerType == "" {
 		providerType = cfg.Provider
 	}
@@ -39,7 +39,7 @@ func NewExecutor() (*Executor, error) {
 		providerType = "ollama"
 	}
 
-	model := cfg.WarmOllamaModel
+	model := cfg.Warm.Model
 	if model == "" {
 		model = cfg.OllamaModel
 	}
@@ -47,7 +47,7 @@ func NewExecutor() (*Executor, error) {
 		model = "nomic-embed-text"
 	}
 
-	endpoint := cfg.WarmOllamaBaseURL
+	endpoint := cfg.Warm.BaseURL
 	if endpoint == "" {
 		endpoint = cfg.OllamaBaseURL
 	}
@@ -55,7 +55,7 @@ func NewExecutor() (*Executor, error) {
 		endpoint = "http://localhost:11434"
 	}
 
-	apiKey := cfg.WarmOllamaAPIKey
+	apiKey := cfg.Warm.Token
 	if apiKey == "" {
 		apiKey = cfg.OllamaAPIKey
 	}
@@ -73,14 +73,14 @@ func NewExecutor() (*Executor, error) {
 	case config.ProviderOllama:
 		embedder, err = embed.NewOllamaProvider(embedCfg)
 	case config.ProviderHuggingFace:
-		hfModel := cfg.WarmHFModel
+		hfModel := cfg.Warm.Model
 		if hfModel == "" {
 			hfModel = cfg.HFModel
 		}
 		if hfModel == "" {
 			hfModel = "sentence-transformers/all-MiniLM-L6-v2"
 		}
-		hfToken := cfg.WarmHFToken
+		hfToken := cfg.Warm.Token
 		if hfToken == "" {
 			hfToken = cfg.HFToken
 		}
@@ -98,7 +98,7 @@ func NewExecutor() (*Executor, error) {
 
 	dimension := 768
 	if providerType == config.ProviderHuggingFace {
-		modelCheck := cfg.WarmHFModel
+		modelCheck := cfg.Warm.Model
 		if modelCheck == "" {
 			modelCheck = cfg.HFModel
 		}

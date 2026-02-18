@@ -89,7 +89,7 @@ func NewDaemon(cfg *config.Config) (*Daemon, error) {
 }
 
 func (d *Daemon) initEmbedder(cfg *config.Config) (embed.Provider, error) {
-	providerType := cfg.WarmProvider
+	providerType := cfg.Warm.Provider
 	if providerType == "" {
 		providerType = cfg.Provider
 	}
@@ -97,7 +97,7 @@ func (d *Daemon) initEmbedder(cfg *config.Config) (embed.Provider, error) {
 		providerType = "ollama"
 	}
 
-	model := cfg.WarmOllamaModel
+	model := cfg.Warm.Model
 	if model == "" {
 		model = cfg.OllamaModel
 	}
@@ -105,7 +105,7 @@ func (d *Daemon) initEmbedder(cfg *config.Config) (embed.Provider, error) {
 		model = "nomic-embed-text"
 	}
 
-	endpoint := cfg.WarmOllamaBaseURL
+	endpoint := cfg.Warm.BaseURL
 	if endpoint == "" {
 		endpoint = cfg.OllamaBaseURL
 	}
@@ -113,7 +113,7 @@ func (d *Daemon) initEmbedder(cfg *config.Config) (embed.Provider, error) {
 		endpoint = "http://localhost:11434"
 	}
 
-	apiKey := cfg.WarmOllamaAPIKey
+	apiKey := cfg.Warm.Token
 	if apiKey == "" {
 		apiKey = cfg.OllamaAPIKey
 	}
@@ -128,14 +128,14 @@ func (d *Daemon) initEmbedder(cfg *config.Config) (embed.Provider, error) {
 	case config.ProviderOllama:
 		return embed.NewOllamaProvider(embedCfg)
 	case config.ProviderHuggingFace:
-		hfModel := cfg.WarmHFModel
+		hfModel := cfg.Warm.Model
 		if hfModel == "" {
 			hfModel = cfg.HFModel
 		}
 		if hfModel == "" {
 			hfModel = "sentence-transformers/all-MiniLM-L6-v2"
 		}
-		hfToken := cfg.WarmHFToken
+		hfToken := cfg.Warm.Token
 		if hfToken == "" {
 			hfToken = cfg.HFToken
 		}
@@ -149,7 +149,7 @@ func (d *Daemon) initEmbedder(cfg *config.Config) (embed.Provider, error) {
 }
 
 func (d *Daemon) getEmbeddingDimension() int {
-	providerType := d.config.WarmProvider
+	providerType := d.config.Warm.Provider
 	if providerType == "" {
 		providerType = d.config.Provider
 	}
@@ -161,7 +161,7 @@ func (d *Daemon) getEmbeddingDimension() int {
 	case config.ProviderOllama:
 		return 768
 	case config.ProviderHuggingFace:
-		model := d.config.WarmHFModel
+		model := d.config.Warm.Model
 		if model == "" {
 			model = d.config.HFModel
 		}

@@ -331,27 +331,27 @@ func runInit(cmd *cobra.Command) error {
 	cfg := config.DefaultConfig()
 
 	// Set warm provider and settings
-	cfg.WarmProvider = config.ProviderType(warmProvider)
+	cfg.Warm.Provider = config.ProviderType(warmProvider)
 	if warmProvider == "huggingface" {
-		cfg.WarmHFModel = warmModel
+		cfg.Warm.Model = warmModel
 	} else if warmProvider == "ollama" {
-		cfg.WarmOllamaModel = warmModel
-		cfg.WarmOllamaBaseURL = warmBaseURL
+		cfg.Warm.Model = warmModel
+		cfg.Warm.BaseURL = warmBaseURL
 		if warmAPIKey != "" {
-			cfg.WarmOllamaAPIKey = warmAPIKey
+			cfg.Warm.Token = warmAPIKey
 		}
 	}
 
 	// Set search settings only if user selected "no" for "same as warm"
 	if !useSameModel {
-		cfg.SearchProvider = config.ProviderType(searchProvider)
+		cfg.Search.Provider = config.ProviderType(searchProvider)
 		if searchProvider == "huggingface" {
-			cfg.SearchHFModel = searchModel
+			cfg.Search.Model = searchModel
 		} else if searchProvider == "ollama" {
-			cfg.SearchOllamaModel = searchModel
-			cfg.SearchOllamaBaseURL = searchBaseURL
+			cfg.Search.Model = searchModel
+			cfg.Search.BaseURL = searchBaseURL
 			if searchAPIKey != "" {
-				cfg.SearchOllamaAPIKey = searchAPIKey
+				cfg.Search.Token = searchAPIKey
 			}
 		}
 	}
@@ -364,23 +364,23 @@ func runInit(cmd *cobra.Command) error {
 	// Show config preview
 	fmt.Println("\n=== Configuration Preview ===")
 	fmt.Printf("Config path: %s\n", configPath)
-	fmt.Printf("Warm Provider: %s\n", cfg.WarmProvider)
-	if cfg.WarmProvider == config.ProviderHuggingFace {
-		fmt.Printf("Warm Model: %s\n", cfg.WarmHFModel)
+	fmt.Printf("Warm Provider: %s\n", cfg.Warm.Provider)
+	if cfg.Warm.Provider == config.ProviderHuggingFace {
+		fmt.Printf("Warm Model: %s\n", cfg.Warm.Model)
 	} else {
-		fmt.Printf("Warm Model: %s\n", cfg.WarmOllamaModel)
-		fmt.Printf("Warm URL: %s\n", cfg.WarmOllamaBaseURL)
+		fmt.Printf("Warm Model: %s\n", cfg.Warm.Model)
+		fmt.Printf("Warm URL: %s\n", cfg.Warm.BaseURL)
 	}
 
 	if useSameModel {
 		fmt.Println("Search Model: inherited from warm")
 	} else {
-		fmt.Printf("Search Provider: %s\n", cfg.SearchProvider)
-		if cfg.SearchProvider == config.ProviderHuggingFace {
-			fmt.Printf("Search Model: %s\n", cfg.SearchHFModel)
+		fmt.Printf("Search Provider: %s\n", cfg.Search.Provider)
+		if cfg.Search.Provider == config.ProviderHuggingFace {
+			fmt.Printf("Search Model: %s\n", cfg.Search.Model)
 		} else {
-			fmt.Printf("Search Model: %s\n", cfg.SearchOllamaModel)
-			fmt.Printf("Search URL: %s\n", cfg.SearchOllamaBaseURL)
+			fmt.Printf("Search Model: %s\n", cfg.Search.Model)
+			fmt.Printf("Search URL: %s\n", cfg.Search.BaseURL)
 		}
 	}
 	fmt.Println("================================")
@@ -538,25 +538,25 @@ func runInitNonInteractive(
 
 	cfg := config.DefaultConfig()
 
-	cfg.WarmProvider = config.ProviderType(warmProvider)
+	cfg.Warm.Provider = config.ProviderType(warmProvider)
 	if warmProvider == "huggingface" {
-		cfg.WarmHFModel = warmModel
+		cfg.Warm.Model = warmModel
 	} else if warmProvider == "ollama" {
-		cfg.WarmOllamaModel = warmModel
-		cfg.WarmOllamaBaseURL = warmBaseURL
+		cfg.Warm.Model = warmModel
+		cfg.Warm.BaseURL = warmBaseURL
 		if warmAPIKey != "" {
-			cfg.WarmOllamaAPIKey = warmAPIKey
+			cfg.Warm.Token = warmAPIKey
 		}
 	}
 
-	cfg.SearchProvider = config.ProviderType(searchProvider)
+	cfg.Search.Provider = config.ProviderType(searchProvider)
 	if searchProvider == "huggingface" {
-		cfg.SearchHFModel = searchModel
+		cfg.Search.Model = searchModel
 	} else if searchProvider == "ollama" {
-		cfg.SearchOllamaModel = searchModel
-		cfg.SearchOllamaBaseURL = searchBaseURL
+		cfg.Search.Model = searchModel
+		cfg.Search.BaseURL = searchBaseURL
 		if searchAPIKey != "" {
-			cfg.SearchOllamaAPIKey = searchAPIKey
+			cfg.Search.Token = searchAPIKey
 		}
 	}
 
@@ -566,21 +566,21 @@ func runInitNonInteractive(
 
 	fmt.Println("\n=== Configuration Preview ===")
 	fmt.Printf("Config path: %s\n", configPath)
-	fmt.Printf("Warm Provider: %s\n", cfg.WarmProvider)
-	if cfg.WarmProvider == config.ProviderHuggingFace {
-		fmt.Printf("Warm Model: %s\n", cfg.WarmHFModel)
+	fmt.Printf("Warm Provider: %s\n", cfg.Warm.Provider)
+	if cfg.Warm.Provider == config.ProviderHuggingFace {
+		fmt.Printf("Warm Model: %s\n", cfg.Warm.Model)
 	} else {
-		fmt.Printf("Warm Model: %s\n", cfg.WarmOllamaModel)
-		fmt.Printf("Warm URL: %s\n", cfg.WarmOllamaBaseURL)
+		fmt.Printf("Warm Model: %s\n", cfg.Warm.Model)
+		fmt.Printf("Warm URL: %s\n", cfg.Warm.BaseURL)
 	}
 
 	if searchProviderFlag != "" || searchModelFlag != "" {
-		fmt.Printf("Search Provider: %s\n", cfg.SearchProvider)
-		if cfg.SearchProvider == config.ProviderHuggingFace {
-			fmt.Printf("Search Model: %s\n", cfg.SearchHFModel)
+		fmt.Printf("Search Provider: %s\n", cfg.Search.Provider)
+		if cfg.Search.Provider == config.ProviderHuggingFace {
+			fmt.Printf("Search Model: %s\n", cfg.Search.Model)
 		} else {
-			fmt.Printf("Search Model: %s\n", cfg.SearchOllamaModel)
-			fmt.Printf("Search URL: %s\n", cfg.SearchOllamaBaseURL)
+			fmt.Printf("Search Model: %s\n", cfg.Search.Model)
+			fmt.Printf("Search URL: %s\n", cfg.Search.BaseURL)
 		}
 	} else {
 		fmt.Println("Search Model: inherited from warm")

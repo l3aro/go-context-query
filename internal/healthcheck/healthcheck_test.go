@@ -16,8 +16,10 @@ func TestCheckWithNilConfig(t *testing.T) {
 
 func TestCheckMarksSearchAsInherited(t *testing.T) {
 	cfg := &config.Config{
-		Provider:         config.ProviderHuggingFace,
-		HFModel:          "google/embeddinggemma-300m",
+		Warm: config.WarmConfig{
+			Provider: config.ProviderHuggingFace,
+			Model:    "google/embeddinggemma-300m",
+		},
 		ChunkSize:        512,
 		ChunkOverlap:     100,
 		MaxContextChunks: 10,
@@ -36,14 +38,18 @@ func TestCheckMarksSearchAsInherited(t *testing.T) {
 
 func TestCheckWithSeparateSearchModel(t *testing.T) {
 	cfg := &config.Config{
-		Provider:            config.ProviderHuggingFace,
-		HFModel:             "google/embeddinggemma-300m",
-		SearchProvider:      config.ProviderOllama,
-		SearchOllamaModel:   "bge-m3",
-		SearchOllamaBaseURL: "http://localhost:11434",
-		ChunkSize:           512,
-		ChunkOverlap:        100,
-		MaxContextChunks:    10,
+		Warm: config.WarmConfig{
+			Provider: config.ProviderHuggingFace,
+			Model:    "google/embeddinggemma-300m",
+		},
+		Search: config.SearchConfig{
+			Provider: config.ProviderOllama,
+			Model:    "bge-m3",
+			BaseURL:  "http://localhost:11434",
+		},
+		ChunkSize:        512,
+		ChunkOverlap:     100,
+		MaxContextChunks: 10,
 	}
 
 	result, err := Check(cfg, "", "")
@@ -98,24 +104,34 @@ func TestIsSearchExplicitlyConfigured(t *testing.T) {
 		{
 			name: "only warm settings",
 			cfg: &config.Config{
-				Provider: config.ProviderHuggingFace,
-				HFModel:  "test-model",
+				Warm: config.WarmConfig{
+					Provider: config.ProviderHuggingFace,
+					Model:    "test-model",
+				},
 			},
 			expected: false,
 		},
 		{
 			name: "search provider set",
 			cfg: &config.Config{
-				Provider:       config.ProviderHuggingFace,
-				SearchProvider: config.ProviderOllama,
+				Warm: config.WarmConfig{
+					Provider: config.ProviderHuggingFace,
+				},
+				Search: config.SearchConfig{
+					Provider: config.ProviderOllama,
+				},
 			},
 			expected: true,
 		},
 		{
 			name: "search model set",
 			cfg: &config.Config{
-				Provider:      config.ProviderHuggingFace,
-				SearchHFModel: "test-model",
+				Warm: config.WarmConfig{
+					Provider: config.ProviderHuggingFace,
+				},
+				Search: config.SearchConfig{
+					Model: "test-model",
+				},
 			},
 			expected: true,
 		},

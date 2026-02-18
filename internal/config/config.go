@@ -16,33 +16,38 @@ const (
 	ProviderOllama      ProviderType = "ollama"
 )
 
+// WarmConfig holds configuration for the warm (indexing) provider
+type WarmConfig struct {
+	Provider ProviderType `yaml:"provider" env:"PROVIDER"`
+	Model    string       `yaml:"model" env:"MODEL"`
+	BaseURL  string       `yaml:"base_url" env:"BASE_URL"`
+	Token    string       `yaml:"token" env:"TOKEN"`
+}
+
+// SearchConfig holds configuration for the search provider
+type SearchConfig struct {
+	Provider ProviderType `yaml:"provider" env:"PROVIDER"`
+	Model    string       `yaml:"model" env:"MODEL"`
+	BaseURL  string       `yaml:"base_url" env:"BASE_URL"`
+	Token    string       `yaml:"token" env:"TOKEN"`
+}
+
 // Config holds all configuration for go-context-query
 type Config struct {
+	// Warm provider configuration (indexing)
+	Warm WarmConfig `yaml:"warm"`
+
+	// Search provider configuration
+	Search SearchConfig `yaml:"search"`
+
+	// Legacy fallback: if Warm/Search not set, these are used
 	Provider ProviderType `yaml:"provider,omitempty" env:"GCQ_PROVIDER"`
-
-	WarmProvider   ProviderType `yaml:"warm_provider" env:"GCQ_WARM_PROVIDER"`
-	SearchProvider ProviderType `yaml:"search_provider" env:"GCQ_SEARCH_PROVIDER"`
-
-	HFModel string `yaml:"hf_model,omitempty" env:"GCQ_HF_MODEL"`
-	HFToken string `yaml:"hf_token,omitempty" env:"GCQ_HF_TOKEN"`
-
-	WarmHFModel string `yaml:"warm_hf_model" env:"GCQ_WARM_HF_MODEL"`
-	WarmHFToken string `yaml:"warm_hf_token" env:"GCQ_WARM_HF_TOKEN"`
-
-	SearchHFModel string `yaml:"search_hf_model" env:"GCQ_SEARCH_HF_MODEL"`
-	SearchHFToken string `yaml:"search_hf_token" env:"GCQ_SEARCH_HF_TOKEN"`
+	HFModel  string       `yaml:"hf_model,omitempty" env:"GCQ_HF_MODEL"`
+	HFToken  string       `yaml:"hf_token,omitempty" env:"GCQ_HF_TOKEN"`
 
 	OllamaModel   string `yaml:"ollama_model,omitempty" env:"GCQ_OLLAMA_MODEL"`
 	OllamaBaseURL string `yaml:"ollama_base_url,omitempty" env:"GCQ_OLLAMA_BASE_URL"`
 	OllamaAPIKey  string `yaml:"ollama_api_key,omitempty" env:"GCQ_OLLAMA_API_KEY"`
-
-	WarmOllamaModel   string `yaml:"warm_ollama_model" env:"GCQ_WARM_OLLAMA_MODEL"`
-	WarmOllamaBaseURL string `yaml:"warm_ollama_base_url" env:"GCQ_WARM_OLLAMA_BASE_URL"`
-	WarmOllamaAPIKey  string `yaml:"warm_ollama_api_key" env:"GCQ_WARM_OLLAMA_API_KEY"`
-
-	SearchOllamaModel   string `yaml:"search_ollama_model" env:"GCQ_SEARCH_OLLAMA_MODEL"`
-	SearchOllamaBaseURL string `yaml:"search_ollama_base_url" env:"GCQ_SEARCH_OLLAMA_BASE_URL"`
-	SearchOllamaAPIKey  string `yaml:"search_ollama_api_key" env:"GCQ_SEARCH_OLLAMA_API_KEY"`
 
 	// Socket path for IPC communication
 	SocketPath string `yaml:"socket_path" env:"GCQ_SOCKET_PATH"`
@@ -63,21 +68,14 @@ type Config struct {
 // DefaultConfig returns a Config with sensible defaults.
 func DefaultConfig() *Config {
 	return &Config{
-		WarmProvider:        "",
-		SearchProvider:      "",
-		WarmHFModel:         "",
-		WarmHFToken:         "",
-		SearchHFModel:       "",
-		SearchHFToken:       "",
+		Warm:                WarmConfig{},
+		Search:              SearchConfig{},
+		Provider:            "",
+		HFModel:             "",
+		HFToken:             "",
 		OllamaModel:         "",
 		OllamaBaseURL:       "",
 		OllamaAPIKey:        "",
-		WarmOllamaModel:     "",
-		WarmOllamaBaseURL:   "",
-		WarmOllamaAPIKey:    "",
-		SearchOllamaModel:   "",
-		SearchOllamaBaseURL: "",
-		SearchOllamaAPIKey:  "",
 		SocketPath:          "/tmp/gcq.sock",
 		ThresholdSimilarity: 0.7,
 		ThresholdMinScore:   0.5,
@@ -188,10 +186,10 @@ func applyEnvOverrides(cfg *Config) {
 		cfg.Provider = ProviderType(v)
 	}
 	if v := os.Getenv("GCQ_WARM_PROVIDER"); v != "" {
-		cfg.WarmProvider = ProviderType(v)
+		cfg.Warm.Provider = ProviderType(v)
 	}
 	if v := os.Getenv("GCQ_SEARCH_PROVIDER"); v != "" {
-		cfg.SearchProvider = ProviderType(v)
+		cfg.Search.Provider = ProviderType(v)
 	}
 	if v := os.Getenv("GCQ_HF_MODEL"); v != "" {
 		cfg.HFModel = v
@@ -200,16 +198,16 @@ func applyEnvOverrides(cfg *Config) {
 		cfg.HFToken = v
 	}
 	if v := os.Getenv("GCQ_WARM_HF_MODEL"); v != "" {
-		cfg.WarmHFModel = v
+		cfg.Warm.Model = v
 	}
 	if v := os.Getenv("GCQ_WARM_HF_TOKEN"); v != "" {
-		cfg.WarmHFToken = v
+		cfg.Warm.Token = v
 	}
 	if v := os.Getenv("GCQ_SEARCH_HF_MODEL"); v != "" {
-		cfg.SearchHFModel = v
+		cfg.Search.Model = v
 	}
 	if v := os.Getenv("GCQ_SEARCH_HF_TOKEN"); v != "" {
-		cfg.SearchHFToken = v
+		cfg.Search.Token = v
 	}
 	if v := os.Getenv("GCQ_OLLAMA_MODEL"); v != "" {
 		cfg.OllamaModel = v
@@ -221,22 +219,22 @@ func applyEnvOverrides(cfg *Config) {
 		cfg.OllamaAPIKey = v
 	}
 	if v := os.Getenv("GCQ_WARM_OLLAMA_MODEL"); v != "" {
-		cfg.WarmOllamaModel = v
+		cfg.Warm.Model = v
 	}
 	if v := os.Getenv("GCQ_WARM_OLLAMA_BASE_URL"); v != "" {
-		cfg.WarmOllamaBaseURL = v
+		cfg.Warm.BaseURL = v
 	}
 	if v := os.Getenv("GCQ_WARM_OLLAMA_API_KEY"); v != "" {
-		cfg.WarmOllamaAPIKey = v
+		cfg.Warm.Token = v
 	}
 	if v := os.Getenv("GCQ_SEARCH_OLLAMA_MODEL"); v != "" {
-		cfg.SearchOllamaModel = v
+		cfg.Search.Model = v
 	}
 	if v := os.Getenv("GCQ_SEARCH_OLLAMA_BASE_URL"); v != "" {
-		cfg.SearchOllamaBaseURL = v
+		cfg.Search.BaseURL = v
 	}
 	if v := os.Getenv("GCQ_SEARCH_OLLAMA_API_KEY"); v != "" {
-		cfg.SearchOllamaAPIKey = v
+		cfg.Search.Token = v
 	}
 	if v := os.Getenv("GCQ_SOCKET_PATH"); v != "" {
 		cfg.SocketPath = v
@@ -273,22 +271,18 @@ func applyEnvOverrides(cfg *Config) {
 
 // Validate checks that the configuration has valid required fields
 func (c *Config) Validate() error {
-	// Determine if we're in dual-provider mode
-	isDualMode := c.WarmProvider != "" || c.SearchProvider != ""
+	isDualMode := c.Warm.Provider != "" || c.Search.Provider != ""
 
 	if isDualMode {
-		// Validate dual-provider mode
 		if err := c.validateDualProviderMode(); err != nil {
 			return err
 		}
 	} else {
-		// Validate single-provider mode (backward compatibility)
 		if err := c.validateSingleProviderMode(); err != nil {
 			return err
 		}
 	}
 
-	// Validate thresholds (common to both modes)
 	if c.ThresholdSimilarity < 0 || c.ThresholdSimilarity > 1 {
 		return fmt.Errorf("threshold_similarity must be between 0 and 1")
 	}
@@ -296,7 +290,6 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("threshold_min_score must be between 0 and 1")
 	}
 
-	// Validate chunk settings
 	if c.ChunkSize <= 0 {
 		return fmt.Errorf("chunk_size must be positive")
 	}
@@ -339,59 +332,54 @@ func (c *Config) validateSingleProviderMode() error {
 
 // validateDualProviderMode validates the dual-provider configuration
 func (c *Config) validateDualProviderMode() error {
-	// Use Provider as fallback if WarmProvider/SearchProvider not set
-	warmProvider := c.WarmProvider
+	warmProvider := c.Warm.Provider
 	if warmProvider == "" {
 		warmProvider = c.Provider
 	}
 
-	searchProvider := c.SearchProvider
+	searchProvider := c.Search.Provider
 	if searchProvider == "" {
 		searchProvider = c.Provider
 	}
 
-	// Validate warm provider
 	if warmProvider != "" {
 		switch warmProvider {
 		case ProviderHuggingFace, ProviderOllama:
-			// Valid
 		default:
-			return fmt.Errorf("invalid warm_provider: %s (must be 'huggingface' or 'ollama')", warmProvider)
+			return fmt.Errorf("invalid warm.provider: %s (must be 'huggingface' or 'ollama')", warmProvider)
 		}
 
-		if warmProvider == ProviderHuggingFace && c.WarmHFModel == "" && c.HFModel == "" {
-			return fmt.Errorf("warm_hf_model is required when warm_provider is huggingface")
+		if warmProvider == ProviderHuggingFace && c.Warm.Model == "" && c.HFModel == "" {
+			return fmt.Errorf("warm.model is required when warm.provider is huggingface")
 		}
 
 		if warmProvider == ProviderOllama {
-			if c.WarmOllamaModel == "" && c.OllamaModel == "" {
-				return fmt.Errorf("warm_ollama_model is required when warm_provider is ollama")
+			if c.Warm.Model == "" && c.OllamaModel == "" {
+				return fmt.Errorf("warm.model is required when warm.provider is ollama")
 			}
-			if c.WarmOllamaBaseURL == "" && c.OllamaBaseURL == "" {
-				return fmt.Errorf("warm_ollama_base_url is required when warm_provider is ollama")
+			if c.Warm.BaseURL == "" && c.OllamaBaseURL == "" {
+				return fmt.Errorf("warm.base_url is required when warm.provider is ollama")
 			}
 		}
 	}
 
-	// Validate search provider
 	if searchProvider != "" {
 		switch searchProvider {
 		case ProviderHuggingFace, ProviderOllama:
-			// Valid
 		default:
-			return fmt.Errorf("invalid search_provider: %s (must be 'huggingface' or 'ollama')", searchProvider)
+			return fmt.Errorf("invalid search.provider: %s (must be 'huggingface' or 'ollama')", searchProvider)
 		}
 
-		if searchProvider == ProviderHuggingFace && c.SearchHFModel == "" && c.HFModel == "" {
-			return fmt.Errorf("search_hf_model is required when search_provider is huggingface")
+		if searchProvider == ProviderHuggingFace && c.Search.Model == "" && c.HFModel == "" {
+			return fmt.Errorf("search.model is required when search.provider is huggingface")
 		}
 
 		if searchProvider == ProviderOllama {
-			if c.SearchOllamaModel == "" && c.OllamaModel == "" {
-				return fmt.Errorf("search_ollama_model is required when search_provider is ollama")
+			if c.Search.Model == "" && c.OllamaModel == "" {
+				return fmt.Errorf("search.model is required when search.provider is ollama")
 			}
-			if c.SearchOllamaBaseURL == "" && c.OllamaBaseURL == "" {
-				return fmt.Errorf("search_ollama_base_url is required when search_provider is ollama")
+			if c.Search.BaseURL == "" && c.OllamaBaseURL == "" {
+				return fmt.Errorf("search.base_url is required when search.provider is ollama")
 			}
 		}
 	}
@@ -399,21 +387,17 @@ func (c *Config) validateDualProviderMode() error {
 	return nil
 }
 
-// MigrateFromLegacy detects legacy single-provider config and populates
-// dual-provider fields from it. This ensures old configs work unchanged
-// while new dual-provider configs take precedence.
-// Call this after loading config but before using provider settings.
 func (c *Config) MigrateFromLegacy() {
-	if c.WarmProvider != "" && c.SearchProvider != "" {
+	if c.Warm.Provider != "" && c.Search.Provider != "" {
 		return
 	}
 
 	if c.Provider != "" {
-		if c.WarmProvider == "" {
-			c.WarmProvider = c.Provider
+		if c.Warm.Provider == "" {
+			c.Warm.Provider = c.Provider
 		}
-		if c.SearchProvider == "" {
-			c.SearchProvider = c.Provider
+		if c.Search.Provider == "" {
+			c.Search.Provider = c.Provider
 		}
 	}
 
@@ -422,55 +406,51 @@ func (c *Config) MigrateFromLegacy() {
 }
 
 func (c *Config) migrateHuggingFaceSettings() {
-	if c.WarmHFModel == "" && c.HFModel != "" {
-		c.WarmHFModel = c.HFModel
+	if c.Warm.Model == "" && c.HFModel != "" {
+		c.Warm.Model = c.HFModel
 	}
-	if c.WarmHFToken == "" && c.HFToken != "" {
-		c.WarmHFToken = c.HFToken
+	if c.Warm.Token == "" && c.HFToken != "" {
+		c.Warm.Token = c.HFToken
 	}
-	if c.SearchHFModel == "" && c.HFModel != "" {
-		c.SearchHFModel = c.HFModel
+	if c.Search.Model == "" && c.HFModel != "" {
+		c.Search.Model = c.HFModel
 	}
-	if c.SearchHFToken == "" && c.HFToken != "" {
-		c.SearchHFToken = c.HFToken
+	if c.Search.Token == "" && c.HFToken != "" {
+		c.Search.Token = c.HFToken
 	}
 }
 
 func (c *Config) migrateOllamaSettings() {
-	if c.WarmOllamaModel == "" && c.OllamaModel != "" {
-		c.WarmOllamaModel = c.OllamaModel
+	if c.Warm.Model == "" && c.OllamaModel != "" {
+		c.Warm.Model = c.OllamaModel
 	}
-	if c.WarmOllamaBaseURL == "" && c.OllamaBaseURL != "" {
-		c.WarmOllamaBaseURL = c.OllamaBaseURL
+	if c.Warm.BaseURL == "" && c.OllamaBaseURL != "" {
+		c.Warm.BaseURL = c.OllamaBaseURL
 	}
-	if c.WarmOllamaAPIKey == "" && c.OllamaAPIKey != "" {
-		c.WarmOllamaAPIKey = c.OllamaAPIKey
+	if c.Warm.Token == "" && c.OllamaAPIKey != "" {
+		c.Warm.Token = c.OllamaAPIKey
 	}
-	if c.SearchOllamaModel == "" && c.OllamaModel != "" {
-		c.SearchOllamaModel = c.OllamaModel
+	if c.Search.Model == "" && c.OllamaModel != "" {
+		c.Search.Model = c.OllamaModel
 	}
-	if c.SearchOllamaBaseURL == "" && c.OllamaBaseURL != "" {
-		c.SearchOllamaBaseURL = c.OllamaBaseURL
+	if c.Search.BaseURL == "" && c.OllamaBaseURL != "" {
+		c.Search.BaseURL = c.OllamaBaseURL
 	}
-	if c.SearchOllamaAPIKey == "" && c.OllamaAPIKey != "" {
-		c.SearchOllamaAPIKey = c.OllamaAPIKey
+	if c.Search.Token == "" && c.OllamaAPIKey != "" {
+		c.Search.Token = c.OllamaAPIKey
 	}
 }
 
-// EffectiveWarmProvider returns the provider to use for warming/indexing.
-// Falls back to the legacy Provider field if WarmProvider is not set.
 func (c *Config) EffectiveWarmProvider() ProviderType {
-	if c.WarmProvider != "" {
-		return c.WarmProvider
+	if c.Warm.Provider != "" {
+		return c.Warm.Provider
 	}
 	return c.Provider
 }
 
-// EffectiveSearchProvider returns the provider to use for semantic search.
-// Falls back to the legacy Provider field if SearchProvider is not set.
 func (c *Config) EffectiveSearchProvider() ProviderType {
-	if c.SearchProvider != "" {
-		return c.SearchProvider
+	if c.Search.Provider != "" {
+		return c.Search.Provider
 	}
 	return c.Provider
 }

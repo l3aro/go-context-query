@@ -14,11 +14,13 @@ func TestDefaultConfig(t *testing.T) {
 		got      interface{}
 		expected interface{}
 	}{
-		{"Provider", cfg.Provider, ProviderOllama},
-		{"HFModel", cfg.HFModel, "sentence-transformers/all-MiniLM-L6-v2"},
-		{"OllamaModel", cfg.OllamaModel, "nomic-embed-text"},
-		{"OllamaBaseURL", cfg.OllamaBaseURL, "http://localhost:11434"},
+		// Legacy fields are now empty by default (nested config is preferred)
+		{"Provider", cfg.Provider, ProviderType("")},
+		{"HFModel", cfg.HFModel, ""},
+		{"OllamaModel", cfg.OllamaModel, ""},
+		{"OllamaBaseURL", cfg.OllamaBaseURL, ""},
 		{"OllamaAPIKey", cfg.OllamaAPIKey, ""},
+		// Global settings
 		{"SocketPath", cfg.SocketPath, "/tmp/gcq.sock"},
 		{"ThresholdSimilarity", cfg.ThresholdSimilarity, 0.7},
 		{"ThresholdMinScore", cfg.ThresholdMinScore, 0.5},
@@ -290,17 +292,18 @@ hf_model: file-model
 ollama_model: file-ollama
 `,
 			envVars: map[string]string{
-				"GCQ_PROVIDER":     "ollama",
-				"GCQ_OLLAMA_MODEL": "env-ollama-model",
+				"GCQ_WARM_PROVIDER":        "ollama",
+				"GCQ_WARM_OLLAMA_MODEL":    "env-ollama-model",
+				"GCQ_WARM_OLLAMA_BASE_URL": "http://localhost:11434",
 			},
 			checkCfg: func(t *testing.T, cfg *Config) {
-				if cfg.Provider != ProviderOllama {
-					t.Errorf("Provider = %v, want %v (from env)", cfg.Provider, ProviderOllama)
+				if cfg.Warm.Provider != ProviderOllama {
+					t.Errorf("Warm.Provider = %v, want %v (from env)", cfg.Warm.Provider, ProviderOllama)
 				}
-				if cfg.OllamaModel != "env-ollama-model" {
-					t.Errorf("OllamaModel = %v, want env-ollama-model (from env)", cfg.OllamaModel)
+				if cfg.Warm.Model != "env-ollama-model" {
+					t.Errorf("Warm.Model = %v, want env-ollama-model (from env)", cfg.Warm.Model)
 				}
-				// HFModel should still be from file
+				// HFModel should still be from file (legacy field)
 				if cfg.HFModel != "file-model" {
 					t.Errorf("HFModel = %v, want file-model (from file)", cfg.HFModel)
 				}
@@ -319,12 +322,20 @@ provider: ollama
 		{
 			name: "invalid provider in file",
 			configYAML: `
-provider: invalid
-ollama_model: test
-ollama_base_url: http://localhost:11434
+warm:
+  provider: invalid
+  model: test
+  base_url: http://localhost:11434
+search:
+  provider: invalid
+  model: test
+  base_url: http://localhost:11434
+chunk_size: 512
+chunk_overlap: 100
+max_context_chunks: 10
 `,
 			wantErr:     true,
-			errContains: "invalid warm_provider",
+			errContains: "invalid warm.provider",
 		},
 	}
 
@@ -729,5 +740,332 @@ func TestConfigSaveCreatesParentDirs(t *testing.T) {
 	// Verify file exists
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
 		t.Fatalf("Config file was not created at %s", configPath)
+	}
+}
+
+// TestNestedConfigUnmarshal tests the nested YAML format unmarshaling
+func TestNestedConfigUnmarshal(t *testing.T) {
+	tests := []struct {
+		name       string
+		configYAML string
+		checkCfg   func(*testing.T, *Config)
+		wantErr    bool
+	}{
+		{
+			name: "nested warm config with ollama",
+			configYAML: `
+warm:
+  provider: ollama
+  model: nomic-embed-text
+  base_url: http://localhost:11434
+  token: secret-token
+search:
+  provider: ollama
+  model: nomic-embed-text
+  base_url: http://localhost:11434
+socket_path: /custom.sock
+chunk_size: 512
+chunk_overlap: 100
+max_context_chunks: 10
+`,
+			checkCfg: func(t *testing.T, cfg *Config) {
+				if cfg.Warm.Provider != ProviderOllama {
+					t.Errorf("Warm.Provider = %v, want %v", cfg.Warm.Provider, ProviderOllama)
+				}
+				if cfg.Warm.Model != "nomic-embed-text" {
+					t.Errorf("Warm.Model = %v, want nomic-embed-text", cfg.Warm.Model)
+				}
+				if cfg.Warm.BaseURL != "http://localhost:11434" {
+					t.Errorf("Warm.BaseURL = %v, want http://localhost:11434", cfg.Warm.BaseURL)
+				}
+				if cfg.Warm.Token != "secret-token" {
+					t.Errorf("Warm.Token = %v, want secret-token", cfg.Warm.Token)
+				}
+				if cfg.Search.Provider != ProviderOllama {
+					t.Errorf("Search.Provider = %v, want %v", cfg.Search.Provider, ProviderOllama)
+				}
+				if cfg.Search.Model != "nomic-embed-text" {
+					t.Errorf("Search.Model = %v, want nomic-embed-text", cfg.Search.Model)
+				}
+				if cfg.SocketPath != "/custom.sock" {
+					t.Errorf("SocketPath = %v, want /custom.sock", cfg.SocketPath)
+				}
+			},
+			wantErr: false,
+		},
+		{
+			name: "nested warm config with huggingface",
+			configYAML: `
+warm:
+  provider: huggingface
+  model: sentence-transformers/all-MiniLM-L6-v2
+  token: hf-token
+search:
+  provider: huggingface
+  model: sentence-transformers/all-MiniLM-L6-v2
+chunk_size: 512
+chunk_overlap: 100
+max_context_chunks: 10
+`,
+			checkCfg: func(t *testing.T, cfg *Config) {
+				if cfg.Warm.Provider != ProviderHuggingFace {
+					t.Errorf("Warm.Provider = %v, want %v", cfg.Warm.Provider, ProviderHuggingFace)
+				}
+				if cfg.Warm.Model != "sentence-transformers/all-MiniLM-L6-v2" {
+					t.Errorf("Warm.Model = %v, want sentence-transformers/all-MiniLM-L6-v2", cfg.Warm.Model)
+				}
+				if cfg.Warm.Token != "hf-token" {
+					t.Errorf("Warm.Token = %v, want hf-token", cfg.Warm.Token)
+				}
+				if cfg.Search.Provider != ProviderHuggingFace {
+					t.Errorf("Search.Provider = %v, want %v", cfg.Search.Provider, ProviderHuggingFace)
+				}
+			},
+			wantErr: false,
+		},
+		{
+			name: "dual provider config - different providers",
+			configYAML: `
+warm:
+  provider: ollama
+  model: nomic-embed-text
+  base_url: http://localhost:11434
+search:
+  provider: huggingface
+  model: sentence-transformers/all-MiniLM-L6-v2
+  token: hf-token
+chunk_size: 512
+chunk_overlap: 100
+max_context_chunks: 10
+`,
+			checkCfg: func(t *testing.T, cfg *Config) {
+				if cfg.Warm.Provider != ProviderOllama {
+					t.Errorf("Warm.Provider = %v, want %v", cfg.Warm.Provider, ProviderOllama)
+				}
+				if cfg.Search.Provider != ProviderHuggingFace {
+					t.Errorf("Search.Provider = %v, want %v", cfg.Search.Provider, ProviderHuggingFace)
+				}
+				if !cfg.IsDualProviderMode() {
+					t.Error("IsDualProviderMode() = false, want true")
+				}
+			},
+			wantErr: false,
+		},
+		{
+			name: "partial nested config - warm only",
+			configYAML: `
+warm:
+  provider: ollama
+  model: nomic-embed-text
+  base_url: http://localhost:11434
+chunk_size: 512
+chunk_overlap: 100
+max_context_chunks: 10
+`,
+			checkCfg: func(t *testing.T, cfg *Config) {
+				if cfg.Warm.Provider != ProviderOllama {
+					t.Errorf("Warm.Provider = %v, want %v", cfg.Warm.Provider, ProviderOllama)
+				}
+				if cfg.Warm.Model != "nomic-embed-text" {
+					t.Errorf("Warm.Model = %v, want nomic-embed-text", cfg.Warm.Model)
+				}
+				// Search.Provider remains empty when only warm is specified
+				// Use EffectiveSearchProvider() to get the effective provider
+				if cfg.Search.Provider != "" {
+					t.Errorf("Search.Provider = %v, want empty (should use EffectiveSearchProvider)", cfg.Search.Provider)
+				}
+			},
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tmpDir := t.TempDir()
+			configPath := filepath.Join(tmpDir, "config.yaml")
+			err := os.WriteFile(configPath, []byte(tt.configYAML), 0644)
+			if err != nil {
+				t.Fatalf("Failed to write config file: %v", err)
+			}
+
+			cfg, err := LoadFromFile(configPath)
+
+			if tt.wantErr {
+				if err == nil {
+					t.Errorf("Expected error, got nil")
+				}
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("Unexpected error: %v", err)
+			}
+
+			if tt.checkCfg != nil {
+				tt.checkCfg(t, cfg)
+			}
+		})
+	}
+}
+
+// TestNestedConfigValidation tests validation for nested config
+func TestNestedConfigValidation(t *testing.T) {
+	tests := []struct {
+		name        string
+		cfg         *Config
+		wantErr     bool
+		errContains string
+	}{
+		{
+			name: "valid nested ollama config",
+			cfg: &Config{
+				Warm: WarmConfig{
+					Provider: ProviderOllama,
+					Model:    "nomic-embed-text",
+					BaseURL:  "http://localhost:11434",
+				},
+				Search: SearchConfig{
+					Provider: ProviderOllama,
+					Model:    "nomic-embed-text",
+					BaseURL:  "http://localhost:11434",
+				},
+				ChunkSize:        512,
+				ChunkOverlap:     100,
+				MaxContextChunks: 10,
+			},
+			wantErr: false,
+		},
+		{
+			name: "valid nested huggingface config",
+			cfg: &Config{
+				Warm: WarmConfig{
+					Provider: ProviderHuggingFace,
+					Model:    "sentence-transformers/all-MiniLM-L6-v2",
+					Token:    "hf-token",
+				},
+				Search: SearchConfig{
+					Provider: ProviderHuggingFace,
+					Model:    "sentence-transformers/all-MiniLM-L6-v2",
+					Token:    "hf-token",
+				},
+				ChunkSize:        512,
+				ChunkOverlap:     100,
+				MaxContextChunks: 10,
+			},
+			wantErr: false,
+		},
+		{
+			name: "invalid nested provider",
+			cfg: &Config{
+				Warm: WarmConfig{
+					Provider: "invalid",
+					Model:    "test",
+				},
+				ChunkSize:        512,
+				ChunkOverlap:     100,
+				MaxContextChunks: 10,
+			},
+			wantErr:     true,
+			errContains: "invalid warm.provider",
+		},
+		{
+			name: "missing model for nested huggingface",
+			cfg: &Config{
+				Warm: WarmConfig{
+					Provider: ProviderHuggingFace,
+					Model:    "",
+				},
+				ChunkSize:        512,
+				ChunkOverlap:     100,
+				MaxContextChunks: 10,
+			},
+			wantErr:     true,
+			errContains: "warm.model is required when warm.provider is huggingface",
+		},
+		{
+			name: "missing model for nested ollama",
+			cfg: &Config{
+				Warm: WarmConfig{
+					Provider: ProviderOllama,
+					Model:    "",
+					BaseURL:  "http://localhost:11434",
+				},
+				ChunkSize:        512,
+				ChunkOverlap:     100,
+				MaxContextChunks: 10,
+			},
+			wantErr:     true,
+			errContains: "warm.model is required when warm.provider is ollama",
+		},
+		{
+			name: "missing base_url for nested ollama",
+			cfg: &Config{
+				Warm: WarmConfig{
+					Provider: ProviderOllama,
+					Model:    "nomic-embed-text",
+					BaseURL:  "",
+				},
+				ChunkSize:        512,
+				ChunkOverlap:     100,
+				MaxContextChunks: 10,
+			},
+			wantErr:     true,
+			errContains: "warm.base_url is required when warm.provider is ollama",
+		},
+		{
+			name: "missing model for search nested huggingface",
+			cfg: &Config{
+				Warm: WarmConfig{
+					Provider: ProviderHuggingFace,
+					Model:    "test-model",
+				},
+				Search: SearchConfig{
+					Provider: ProviderHuggingFace,
+					Model:    "",
+				},
+				ChunkSize:        512,
+				ChunkOverlap:     100,
+				MaxContextChunks: 10,
+			},
+			wantErr:     true,
+			errContains: "search.model is required when search.provider is huggingface",
+		},
+		{
+			name: "missing base_url for search nested ollama",
+			cfg: &Config{
+				Warm: WarmConfig{
+					Provider: ProviderOllama,
+					Model:    "test-model",
+					BaseURL:  "http://localhost:11434",
+				},
+				Search: SearchConfig{
+					Provider: ProviderOllama,
+					Model:    "test-model",
+					BaseURL:  "",
+				},
+				ChunkSize:        512,
+				ChunkOverlap:     100,
+				MaxContextChunks: 10,
+			},
+			wantErr:     true,
+			errContains: "search.base_url is required when search.provider is ollama",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.cfg.Validate()
+			if tt.wantErr {
+				if err == nil {
+					t.Errorf("Expected error containing %q, got nil", tt.errContains)
+				} else if !contains(err.Error(), tt.errContains) {
+					t.Errorf("Error = %q, should contain %q", err.Error(), tt.errContains)
+				}
+			} else {
+				if err != nil {
+					t.Errorf("Unexpected error: %v", err)
+				}
+			}
+		})
 	}
 }

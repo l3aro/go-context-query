@@ -141,65 +141,29 @@ func runWarmLocally(path string, cmd *cobra.Command, langFlag string, forceFlag 
 	warmModelFlag, _ := cmd.Flags().GetString("warm-model")
 	modelFlag, _ := cmd.Flags().GetString("model")
 
-	providerType := warmProviderFlag
-	if providerType == "" {
-		providerType = providerFlag
-	}
-	if providerType == "" {
-		providerType = string(cfg.WarmProvider)
-	}
-	if providerType == "" {
-		providerType = "ollama"
+	// Apply CLI flags to config for warm provider
+	if warmProviderFlag != "" {
+		cfg.Warm.Provider = config.ProviderType(warmProviderFlag)
+	} else if providerFlag != "" {
+		cfg.Warm.Provider = config.ProviderType(providerFlag)
 	}
 
-	var provider embed.Provider
+	if warmModelFlag != "" {
+		cfg.Warm.Model = warmModelFlag
+	} else if modelFlag != "" {
+		cfg.Warm.Model = modelFlag
+	}
 
-	switch providerType {
-	case "ollama":
-		model := warmModelFlag
-		if model == "" {
-			model = modelFlag
-		}
-		if model == "" {
-			model = cfg.WarmOllamaModel
-		}
-		if model == "" {
-			model = "nomic-embed-text"
-		}
-		endpoint := cfg.WarmOllamaBaseURL
-		if endpoint == "" {
-			endpoint = "http://localhost:11434"
-		}
-		apiKey := cfg.WarmOllamaAPIKey
-		provider, err = embed.NewOllamaProvider(&embed.Config{
-			Model:    model,
-			Endpoint: endpoint,
-			APIKey:   apiKey,
-		})
-		if err != nil {
-			return fmt.Errorf("creating Ollama provider: %w", err)
-		}
-	case "huggingface":
-		model := warmModelFlag
-		if model == "" {
-			model = modelFlag
-		}
-		if model == "" {
-			model = cfg.WarmHFModel
-		}
-		if model == "" {
-			model = "sentence-transformers/all-MiniLM-L6-v2"
-		}
-		token := cfg.WarmHFToken
-		provider, err = embed.NewHuggingFaceProvider(&embed.Config{
-			Model:  model,
-			APIKey: token,
-		})
-		if err != nil {
-			return fmt.Errorf("creating HuggingFace provider: %w", err)
-		}
-	default:
-		return fmt.Errorf("unknown provider: %s (use 'ollama' or 'huggingface')", providerType)
+	// Create embedding service with config
+	service, err := embed.NewEmbeddingService(cfg)
+	if err != nil {
+		return fmt.Errorf("creating embedding service: %w", err)
+	}
+
+	// Get warm provider from service for indexing
+	provider := service.WarmProvider()
+	if provider == nil {
+		return fmt.Errorf("warm provider not initialized")
 	}
 
 	// Build the index

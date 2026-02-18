@@ -88,8 +88,7 @@ func runSemanticLocally(query string, cmd *cobra.Command) error {
 		return fmt.Errorf("loading config: %w", err)
 	}
 
-	// Get provider type and model
-	// Priority: CLI flags > metadata > config > defaults
+	// Get CLI flags
 	searchProviderFlag, _ := cmd.Flags().GetString("search-provider")
 	providerFlag, _ := cmd.Flags().GetString("provider")
 	searchModelFlag, _ := cmd.Flags().GetString("search-model")
@@ -100,63 +99,29 @@ func runSemanticLocally(query string, cmd *cobra.Command) error {
 		k = 10
 	}
 
-	providerType := searchProviderFlag
-	if providerType == "" {
-		providerType = providerFlag
-	}
-	if providerType == "" {
-		providerType = string(cfg.EffectiveSearchProvider())
-		if providerType == "" {
-			providerType = "ollama"
-		}
+	// Apply CLI flags to config for search provider
+	if searchProviderFlag != "" {
+		cfg.Search.Provider = config.ProviderType(searchProviderFlag)
+	} else if providerFlag != "" {
+		cfg.Search.Provider = config.ProviderType(providerFlag)
 	}
 
-	modelName := searchModelFlag
-	if modelName == "" {
-		modelName = modelFlag
-	}
-	if modelName == "" {
-		if providerType == "ollama" {
-			modelName = cfg.SearchOllamaModel
-			if modelName == "" {
-				modelName = "nomic-embed-text"
-			}
-		} else {
-			modelName = cfg.SearchHFModel
-		}
+	if searchModelFlag != "" {
+		cfg.Search.Model = searchModelFlag
+	} else if modelFlag != "" {
+		cfg.Search.Model = modelFlag
 	}
 
-	var endpoint, apiKey string
-	if providerType == "ollama" {
-		endpoint = cfg.SearchOllamaBaseURL
-		if endpoint == "" {
-			endpoint = "http://localhost:11434"
-		}
-		apiKey = cfg.SearchOllamaAPIKey
+	// Create embedding service with config
+	service, err := embed.NewEmbeddingService(cfg)
+	if err != nil {
+		return fmt.Errorf("creating embedding service: %w", err)
 	}
 
-	// Create the embedding provider
-	var provider embed.Provider
-	switch providerType {
-	case "ollama":
-		provider, err = embed.NewOllamaProvider(&embed.Config{
-			Model:    modelName,
-			Endpoint: endpoint,
-			APIKey:   apiKey,
-		})
-		if err != nil {
-			return fmt.Errorf("creating Ollama provider: %w", err)
-		}
-	case "huggingface":
-		provider, err = embed.NewHuggingFaceProvider(&embed.Config{
-			Model:  modelName,
-			APIKey: cfg.SearchHFToken,
-		})
-		if err != nil {
-			return fmt.Errorf("creating HuggingFace provider: %w", err)
-		}
-	default:
-		return fmt.Errorf("unknown provider: %s (use 'ollama' or 'huggingface')", providerType)
+	// Get search provider from service
+	provider := service.SearchProvider()
+	if provider == nil {
+		return fmt.Errorf("search provider not initialized")
 	}
 
 	// Check dimension compatibility between index and search provider

@@ -76,9 +76,9 @@ func checkWarmModel(cfg *config.Config) ModelStatus {
 
 	switch provider {
 	case config.ProviderOllama:
-		return checkOllamaModel(cfg.WarmOllamaModel, cfg.WarmOllamaBaseURL, cfg.WarmOllamaAPIKey)
+		return checkOllamaModel(cfg.Warm.Model, cfg.Warm.BaseURL, cfg.Warm.Token)
 	case config.ProviderHuggingFace:
-		return checkHuggingFaceModel(cfg.WarmHFModel)
+		return checkHuggingFaceModel(cfg.Warm.Model)
 	default:
 		return ModelStatus{
 			Provider: string(provider),
@@ -114,9 +114,9 @@ func checkSearchModel(cfg *config.Config, warmStatus ModelStatus) ModelStatus {
 
 	switch provider {
 	case config.ProviderOllama:
-		return checkOllamaModel(cfg.SearchOllamaModel, cfg.SearchOllamaBaseURL, cfg.SearchOllamaAPIKey)
+		return checkOllamaModel(cfg.Search.Model, cfg.Search.BaseURL, cfg.Search.Token)
 	case config.ProviderHuggingFace:
-		return checkHuggingFaceModel(cfg.SearchHFModel)
+		return checkHuggingFaceModel(cfg.Search.Model)
 	default:
 		return ModelStatus{
 			Provider: string(provider),
@@ -128,10 +128,10 @@ func checkSearchModel(cfg *config.Config, warmStatus ModelStatus) ModelStatus {
 
 // isSearchExplicitlyConfigured returns true if the user explicitly set search-specific config fields.
 func isSearchExplicitlyConfigured(cfg *config.Config) bool {
-	if cfg.SearchProvider != "" {
+	if cfg.Search.Provider != "" {
 		return true
 	}
-	if cfg.SearchHFModel != "" || cfg.SearchOllamaModel != "" || cfg.SearchOllamaBaseURL != "" {
+	if cfg.Search.Model != "" || cfg.Search.BaseURL != "" {
 		return true
 	}
 	return false
@@ -144,10 +144,10 @@ func isSameAsWarm(cfg *config.Config) bool {
 	}
 	switch cfg.EffectiveWarmProvider() {
 	case config.ProviderOllama:
-		return cfg.WarmOllamaModel == cfg.SearchOllamaModel &&
-			cfg.WarmOllamaBaseURL == cfg.SearchOllamaBaseURL
+		return cfg.Warm.Model == cfg.Search.Model &&
+			cfg.Warm.BaseURL == cfg.Search.BaseURL
 	case config.ProviderHuggingFace:
-		return cfg.WarmHFModel == cfg.SearchHFModel
+		return cfg.Warm.Model == cfg.Search.Model
 	}
 	return false
 }
