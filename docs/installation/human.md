@@ -7,8 +7,6 @@ Welcome! This guide will help you get go-context-query up and running on your ma
 Before you begin, make sure you have:
 
 - **Go 1.21+** installed on your system
-- **Ollama** (optional, for local embeddings) - [Download here](https://ollama.com)
-- **A code editor** (VS Code, etc.)
 
 ## Quick Start
 
