@@ -4,14 +4,12 @@
 package daemon
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"time"
 )
 

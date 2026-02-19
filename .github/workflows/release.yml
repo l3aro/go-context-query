@@ -44,7 +44,6 @@ jobs:
         run: |
           go build -ldflags="-X main.version=${GITHUB_REF#refs/tags/}" -o dist/gcq-${{ matrix.goos }}-${{ matrix.arch }}${{ matrix.ext }} ./cmd/gcq
           go build -ldflags="-X main.version=${GITHUB_REF#refs/tags/}" -o dist/gcqd-${{ matrix.goos }}-${{ matrix.arch }}${{ matrix.ext }} ./cmd/gcqd
-          ls -la dist/
 
       - name: Upload Release Asset
         uses: softprops/action-gh-release@v2
