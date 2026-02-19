@@ -327,60 +327,61 @@ mv gcq ~/.local/bin/  # or wherever gcq is installed
 
 ### Step 1: Warm Model Provider
 
-Ask: **"What embedding provider do you want to use for indexing/warming your codebase?"**
+Ask the user these questions to determine CLI options:
 
-Options:
-- Ollama (local, privacy-friendly)
-- HuggingFace (cloud-based)
-
-**Wait for user answer before proceeding.**
+1. **Do you want to use Ollama or HuggingFace for indexing/warming your codebase?**
+   - **Ollama** → `--warm-provider=ollama`
+   - **HuggingFace** → `--warm-provider=huggingface`
 
 ### Step 2: Provider-Specific Details
 
 **If Ollama selected:**
-- Ask: **"Is your Ollama instance running locally, or is it a cloud/remote endpoint?"**
-- If local: Ask: **"What is your Ollama base URL?"** (default: http://localhost:11434)
-- If cloud: Ask: **"What is your Ollama base URL?"** (e.g., https://api.ollama.com)
-- Ask: **"Which Ollama model do you want to use?"**
-- Ask: **"Do you have an Ollama API key?"** (required for cloud, optional for local)
+1. **Is your Ollama instance running locally?**
+   - **Yes (local)** → Ask: **"What is your Ollama base URL?"** (default: http://localhost:11434) → `--warm-base-url=<URL>`
+   - **No (cloud)** → Ask: **"What is your Ollama base URL?"** (e.g., https://api.ollama.com) → `--warm-base-url=<URL>`
+
+2. **Do you have an Ollama API key?**
+   - **Yes** → Ask: **"What is your API key?"** → `--warm-api-key=<KEY>`
+   - **No** → (no flag)
+
+3. Ask: **"Which Ollama model do you want to use?"** → `--warm-model=<MODEL>`
 
 **If HuggingFace selected:**
-- Ask: **"Is your HuggingFace endpoint running locally (e.g., HuggingFace Inference Container), or is it the cloud-based HuggingFace Hub?"**
-- If local: Ask: **"What is your HuggingFace base URL?"** (e.g., http://localhost:8080)
-- If cloud: Ask: **"Which HuggingFace model do you want to use?"**
-- Ask: **"Do you have a HuggingFace API token?"** (required for cloud, optional for local)
+1. **Is your HuggingFace endpoint running locally (e.g., HuggingFace Inference Container)?**
+   - **Yes (local)** → Ask: **"What is your HuggingFace base URL?"** (e.g., http://localhost:8080) → `--warm-base-url=<URL>`
+   - **No (cloud)** → (no base URL needed)
 
-**Wait for user answers before proceeding.**
+2. Ask: **"Which HuggingFace model do you want to use?"** → `--warm-model=<MODEL>`
+
+3. **Do you have a HuggingFace API token?**
+   - **Yes** → Ask: **"What is your API token?"** → `--warm-api-key=<TOKEN>`
+   - **No** → (only works for local, required for cloud)
 
 ### Step 3: Search Model
 
-Ask: **"Do you want to use the same model for both indexing and search, or configure a different one for search?"**
-
-- **Same model** → Search inherits warm settings → Skip to Step 4
-- **Different model** → Continue with Step 3a
-
-**Wait for user answer before proceeding.**
+**Search Model - Used for semantic search queries. Use same model as warm model?**
+- **Yes, use warm model** → Search inherits warm settings → Skip to Step 4
+- **No, configure separately** → Continue with Step 3a
 
 ### Step 3a: Search Model Configuration (if different from warm)
 
-Repeat Step 2 questions for search provider:
+Repeat Step 2 questions for search provider, using `--search-*` flags instead of `--warm-*`:
+- `--search-provider`
+- `--search-model`
+- `--search-base-url`
+- `--search-api-key`
 
-**If Ollama selected:**
-- Ask: **"Is your Ollama instance running locally, or is it a cloud/remote endpoint?"**
-- If local: Ask: **"What is your Ollama base URL?"**
-- If cloud: Ask: **"What is your Ollama base URL?"**
-- Ask: **"Which Ollama model do you want to use for search?"**
-- Ask: **"Do you have an Ollama API key?"**
+### Step 4: Additional Options
 
-**If HuggingFace selected:**
-- Ask: **"Is your HuggingFace endpoint running locally (e.g., HuggingFace Inference Container), or is it the cloud-based HuggingFace Hub?"**
-- If local: Ask: **"What is your HuggingFace base URL for search?"**
-- If cloud: Ask: **"Which HuggingFace model do you want to use for search?"**
-- Ask: **"Do you have a HuggingFace API token?"** (required for cloud, optional for local)
+1. **Do you want to skip the health check?**
+   - **Yes** → `--skip-health-check`
+   - **No** → (run health check)
 
-**Wait for user answers before proceeding.**
+2. **Do you want to install the gcq skill for your agent?**
+   - **Yes** → `--skill`
+   - **No** → (no flag)
 
-### Step 4: Generate Command
+### Step 5: Generate Command
 
 After collecting all answers, generate the appropriate gcq init command:
 
@@ -410,94 +411,3 @@ After collecting all answers, generate the appropriate gcq init command:
   --skip-health-check \
   --skill
 ```
-
-### Step 6: Offer Skill Installation
-
-After initialization, ask: **"Would you like me to install the gcq skill for your agent?"**
-
-This enables:
-- Automatic discovery of gcq capabilities
-- Context-aware code analysis
-- Semantic search integration
-
-```bash
-./gcq init --skill
-# Or add --skill to any init command above
-```
-
-### Complete Interview Flow Example
-
-```
-Agent: Hi! I'll help you set up gcq for semantic code analysis.
-
-Agent: First, let me check if gcq is already installed...
-
-(which gcq output)
-
-Agent: gcq is already installed (version X.X.X). Would you like me to update it to the latest version, or can we proceed with the current version?
-
-User: Let's update to the latest version
-
-Agent: Great! Updating gcq...
-(download and install latest version)
-
-Agent: Now, let's configure gcq. What embedding provider do you want to use for indexing/warming your codebase?
-  - Ollama (local or cloud)
-  - HuggingFace (cloud-based)
-
-User: Ollama
-
-Agent: Is your Ollama instance running locally, or is it a cloud/remote endpoint?
-
-User: Local
-
-Agent: What is your Ollama base URL?
-
-User: http://localhost:11434
-
-Agent: Which Ollama model do you want to use?
-
-User: nomic-embed-text
-
-Agent: Do you have an Ollama API key? (optional - not needed for local)
-
-User: No thanks
-
-Agent: Do you want to use the same model for both indexing and search, or configure a different one for search?
-
-User: Different model
-
-Agent: Okay, let's configure the search model. Is your Ollama instance running locally, or is it a cloud/remote endpoint?
-
-User: Local
-
-Agent: What is your Ollama base URL for search?
-
-User: http://localhost:11434
-
-Agent: Which Ollama model do you want to use for search?
-
-User: bge-m3
-
-Agent: Do you have an Ollama API key for search? (optional)
-
-User: No thanks
-
-Agent: Great! Here's the command based on your answers:
-
-./gcq init \
-  --warm-provider ollama \
-  --warm-model nomic-embed-text \
-  --warm-base-url http://localhost:11434 \
-  --search-provider ollama \
-  --search-model bge-m3 \
-  --search-base-url http://localhost:11434 \
-  --skip-health-check
-
-Would you like me to:
-1. Run this command now?
-2. Add the --skill flag to install the agent skill?
-3. Customize any options?
-```
-
-Note: Configuration is always saved to `.gcq/config.yaml` in your project directory (global config is not supported).
