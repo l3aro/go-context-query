@@ -287,3 +287,121 @@ After interviewing, map answers to gcq init flags:
 ```bash
 gcq init --warm-provider ollama --warm-model nomic-embed-text --skip-health-check --skill
 ```
+
+## LLM Agent Interview Pattern (Init Command)
+
+When helping users set up gcq for the first time, replicate the `gcq init` interactive flow by asking questions step-by-step. Use the `question` tool to gather configuration details.
+
+### Step 1: Warm Model Provider
+
+Ask: **"What embedding provider do you want to use for indexing/warming your codebase?"**
+
+Options:
+- Ollama (local, privacy-friendly)
+- HuggingFace (cloud-based)
+
+### Step 2: Provider-Specific Details
+
+**If Ollama selected:**
+- Ask: **"What's your Ollama base URL?"** (default: http://localhost:11434)
+- Ask: **"Which Ollama model do you want to use?"** (default: nomic-embed-text)
+- Ask: **"Do you have an Ollama API key?"** (optional, press Enter to skip)
+
+**If HuggingFace selected:**
+- Ask: **"Which HuggingFace model do you want to use?"** (default: google/embeddinggemma-300m)
+- Ask: **"Do you have a HuggingFace API token?"** (optional)
+
+### Step 3: Search Model
+
+Ask: **"Do you want to use the same model for both indexing and search, or configure a different one for search?"**
+
+- **Yes, use same model** → Search inherits warm settings
+- **No, configure separately** → Follow Step 2 questions again for search provider
+
+### Step 4: Project Location
+
+Ask: **"Where should the configuration be saved?"**
+
+- **Project** (default) → Saves to `.gcq/config.yaml` in current directory
+- Note: Global config is deprecated
+
+### Step 5: Generate Command
+
+After collecting all answers, generate the appropriate gcq init command:
+
+```bash
+# Example: Ollama only
+./gcq init \
+  --warm-provider ollama \
+  --warm-model nomic-embed-text \
+  --warm-base-url http://localhost:11434 \
+  --skip-health-check
+
+# Example: Dual provider (Ollama + HuggingFace)
+./gcq init \
+  --warm-provider ollama \
+  --warm-model nomic-embed-text \
+  --search-provider huggingface \
+  --search-model bge-m3 \
+  --skip-health-check
+
+# Example: Full configuration
+./gcq init \
+  --warm-provider ollama \
+  --warm-model nomic-embed-text \
+  --warm-base-url http://localhost:11434 \
+  --search-provider huggingface \
+  --search-model bge-m3 \
+  --skip-health-check \
+  --skill
+```
+
+### Step 6: Offer Skill Installation
+
+After initialization, ask: **"Would you like me to install the gcq skill for your agent?"**
+
+This enables:
+- Automatic discovery of gcq capabilities
+- Context-aware code analysis
+- Semantic search integration
+
+```bash
+./gcq init --skill
+# Or add --skill to any init command above
+```
+
+### Complete Interview Flow Example
+
+```
+Agent: Hi! I'll help you set up gcq for semantic code analysis. Let me ask you a few questions.
+
+Agent: First, which embedding provider do you want to use for indexing your codebase?
+  - Ollama (local, privacy-friendly)
+  - HuggingFace (cloud-based)
+
+User: Ollama
+
+Agent: What's your Ollama base URL? (press Enter for default http://localhost:11434)
+
+User: (press Enter)
+
+Agent: Which Ollama model do you want to use? (default: nomic-embed-text)
+
+User: nomic-embed-text
+
+Agent: Do you want to use a different model for search queries, or the same as your indexing model?
+
+User: Same is fine
+
+Agent: Got it! I'll set up gcq with Ollama for both indexing and search. Here's the command:
+
+./gcq init \
+  --warm-provider ollama \
+  --warm-model nomic-embed-text \
+  --skip-health-check
+
+Would you like me to:
+1. Run this command now?
+2. Add the --skill flag to install the agent skill?
+3. Customize any options?
+```
