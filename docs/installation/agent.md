@@ -338,13 +338,15 @@ Options:
 ### Step 2: Provider-Specific Details
 
 **If Ollama selected:**
-- Ask: **"What is your Ollama base URL?"** (e.g., http://localhost:11434)
+- Ask: **"Is your Ollama instance running locally, or is it a cloud/remote endpoint?"**
+- If local: Ask: **"What is your Ollama base URL?"** (default: http://localhost:11434)
+- If cloud: Ask: **"What is your Ollama base URL?"** (e.g., https://api.ollama.com)
 - Ask: **"Which Ollama model do you want to use?"**
-- Ask: **"Do you have an Ollama API key?"** (optional)
+- Ask: **"Do you have an Ollama API key?"** (required for cloud, optional for local)
 
 **If HuggingFace selected:**
 - Ask: **"Which HuggingFace model do you want to use?"**
-- Ask: **"Do you have a HuggingFace API token?"** (optional)
+- Ask: **"Do you have a HuggingFace API token?"** (required)
 
 **Wait for user answers before proceeding.**
 
@@ -352,16 +354,29 @@ Options:
 
 Ask: **"Do you want to use the same model for both indexing and search, or configure a different one for search?"**
 
-- **Same model** → Search inherits warm settings
-- **Different model** → Follow Step 2 questions again for search provider
+- **Same model** → Search inherits warm settings → Skip to Step 4
+- **Different model** → Continue with Step 3a
 
 **Wait for user answer before proceeding.**
 
-### Step 4: Project Location
+### Step 3a: Search Model Configuration (if different from warm)
 
-Ask: **"Where should the configuration be saved?"** (typically the current project directory)
+Repeat Step 2 questions for search provider:
 
-### Step 5: Generate Command
+**If Ollama selected:**
+- Ask: **"Is your Ollama instance running locally, or is it a cloud/remote endpoint?"**
+- If local: Ask: **"What is your Ollama base URL?"**
+- If cloud: Ask: **"What is your Ollama base URL?"**
+- Ask: **"Which Ollama model do you want to use for search?"**
+- Ask: **"Do you have an Ollama API key?"**
+
+**If HuggingFace selected:**
+- Ask: **"Which HuggingFace model do you want to use for search?"**
+- Ask: **"Do you have a HuggingFace API token?"**
+
+**Wait for user answers before proceeding.**
+
+### Step 4: Generate Command
 
 After collecting all answers, generate the appropriate gcq init command:
 
@@ -423,10 +438,14 @@ Agent: Great! Updating gcq...
 (download and install latest version)
 
 Agent: Now, let's configure gcq. What embedding provider do you want to use for indexing/warming your codebase?
-  - Ollama (local, privacy-friendly)
+  - Ollama (local or cloud)
   - HuggingFace (cloud-based)
 
 User: Ollama
+
+Agent: Is your Ollama instance running locally, or is it a cloud/remote endpoint?
+
+User: Local
 
 Agent: What is your Ollama base URL?
 
@@ -436,13 +455,29 @@ Agent: Which Ollama model do you want to use?
 
 User: nomic-embed-text
 
-Agent: Do you have an Ollama API key? (optional)
+Agent: Do you have an Ollama API key? (optional - not needed for local)
 
 User: No thanks
 
 Agent: Do you want to use the same model for both indexing and search, or configure a different one for search?
 
-User: Same is fine
+User: Different model
+
+Agent: Okay, let's configure the search model. Is your Ollama instance running locally, or is it a cloud/remote endpoint?
+
+User: Local
+
+Agent: What is your Ollama base URL for search?
+
+User: http://localhost:11434
+
+Agent: Which Ollama model do you want to use for search?
+
+User: bge-m3
+
+Agent: Do you have an Ollama API key for search? (optional)
+
+User: No thanks
 
 Agent: Great! Here's the command based on your answers:
 
@@ -450,6 +485,9 @@ Agent: Great! Here's the command based on your answers:
   --warm-provider ollama \
   --warm-model nomic-embed-text \
   --warm-base-url http://localhost:11434 \
+  --search-provider ollama \
+  --search-model bge-m3 \
+  --search-base-url http://localhost:11434 \
   --skip-health-check
 
 Would you like me to:
@@ -457,3 +495,5 @@ Would you like me to:
 2. Add the --skill flag to install the agent skill?
 3. Customize any options?
 ```
+
+Note: Configuration is always saved to `.gcq/config.yaml` in your project directory (global config is not supported).
