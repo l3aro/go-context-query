@@ -1,16 +1,5 @@
 # Installation Guide
 
-## For Humans
-
-Paste this into your LLM agent session:
-
-```
-Install and configure go-context-query by following the instructions here:
-https://raw.githubusercontent.com/l3aro/go-context-query/main/docs/installation/agent.md
-```
-
----
-
 Welcome! This guide will help you get go-context-query up and running on your machine.
 
 ## Download Standalone Binary

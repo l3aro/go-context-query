@@ -4,12 +4,27 @@ Semantic code indexing and analysis tool.
 
 ## Installation
 
+For detailed installation instructions, see the [Installation Guide](docs/installation/human.md).
+
+### Quick Install
+
 ```bash
 # Build from source
 make build
 
 # Or install to GOPATH
 make install-bin
+```
+
+---
+
+## For LLM Agents
+
+Paste this into your LLM agent session:
+
+```
+Install and configure go-context-query by following the instructions here:
+https://raw.githubusercontent.com/l3aro/go-context-query/main/docs/installation/agent.md
 ```
 
 ## Configuration
