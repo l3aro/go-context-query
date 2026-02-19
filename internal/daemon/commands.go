@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -48,15 +49,28 @@ func Start(opts *StartOptions) (*StartResult, error) {
 		env = append(env, "GCQ_VERBOSE=true")
 	}
 
+	// Build args with project path
+	args := []string{daemonPath}
+	if opts.ProjectPath != "" {
+		args = append(args, "-project", opts.ProjectPath)
+	}
+	if opts.SocketPath != "" {
+		args = append(args, "-socket", opts.SocketPath)
+	}
+
 	// Start the daemon
 	cmd := &exec.Cmd{
 		Path: daemonPath,
+		Args: args,
 		Env:  env,
 	}
 
 	if opts.Background {
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
+		cmd.Stdout = nil
+		cmd.Stderr = nil
+		cmd.SysProcAttr = &syscall.SysProcAttr{
+			Setsid: true,
+		}
 	} else {
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
@@ -100,10 +114,11 @@ func Start(opts *StartOptions) (*StartResult, error) {
 
 		ready, err := waitForReady(waitCtx, timeout)
 		if err != nil {
-			// Try to kill the process
-			cmd.Process.Kill()
-			RemovePID()
-			RemoveStatus()
+			if !opts.Background {
+				cmd.Process.Kill()
+				RemovePID()
+				RemoveStatus()
+			}
 			return &StartResult{
 				Success:   false,
 				PID:       pid,
@@ -173,8 +188,11 @@ func waitForReady(ctx context.Context, timeout time.Duration) (bool, error) {
 		default:
 		}
 
-		status, err := CheckStatus()
-		if err == nil && status.Running && status.Ready {
+		// Try to ping daemon directly - don't require PID file
+		socketPath := GetSocketPath()
+		conn, err := net.Dial("unix", socketPath)
+		if err == nil {
+			conn.Close()
 			return true, nil
 		}
 		time.Sleep(100 * time.Millisecond)

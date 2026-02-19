@@ -5,10 +5,12 @@ package client
 
 import (
 	"context"
+	"crypto/md5"
 	"encoding/json"
 	"fmt"
 	"net"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
@@ -131,6 +133,19 @@ func New(opts ...Option) *Client {
 	c.connPool = newConnPool(c.socketPath, c.tcpPort, c.timeout)
 
 	return c
+}
+
+// computeSocketPath computes socket path from project path hash
+func computeSocketPath(projectPath string) string {
+	if projectPath == "" {
+		return DefaultSocketPath
+	}
+	absPath, err := filepath.Abs(projectPath)
+	if err != nil {
+		return DefaultSocketPath
+	}
+	hash := md5.Sum([]byte(absPath))
+	return fmt.Sprintf("/tmp/gcq-%x.sock", hash[:8])
 }
 
 // getSocketPath gets the socket path from environment or default

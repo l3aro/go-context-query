@@ -5,6 +5,7 @@ import "time"
 type StartOptions struct {
 	DaemonPath   string
 	SocketPath   string
+	ProjectPath  string
 	ConfigPath   string
 	Verbose      bool
 	WaitForReady bool

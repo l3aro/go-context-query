@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"crypto/md5"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -51,16 +52,55 @@ type Daemon struct {
 	ctx          context.Context
 	cancel       context.CancelFunc
 	indexPath    string
+	projectPath  string
+	socketPath   string
+
+	// Dirty tracking for file change notifications
+	dirtyFiles        map[string]bool
+	dirtyCount        int
+	reindexThreshold  int
+	reindexInProgress bool
 }
 
-func NewDaemon(cfg *config.Config) (*Daemon, error) {
+func computeSocketPath(projectPath string) string {
+	if projectPath == "" {
+		return "/tmp/gcq.sock"
+	}
+	absPath, err := filepath.Abs(projectPath)
+	if err != nil {
+		return "/tmp/gcq.sock"
+	}
+	hash := md5.Sum([]byte(absPath))
+	return fmt.Sprintf("/tmp/gcq-%x.sock", hash[:8])
+}
+
+func computeIndexPath(projectPath string) string {
+	if projectPath == "" {
+		return filepath.Join(os.TempDir(), "gcq.idx")
+	}
+	return filepath.Join(projectPath, ".gcq", "index.idx")
+}
+
+func NewDaemon(cfg *config.Config, projectPath string) (*Daemon, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 
+	socketPath := cfg.SocketPath
+	if socketPath == "" {
+		socketPath = computeSocketPath(projectPath)
+	}
+	indexPath := computeIndexPath(projectPath)
+
 	d := &Daemon{
-		config:    cfg,
-		ctx:       ctx,
-		cancel:    cancel,
-		indexPath: filepath.Join(os.TempDir(), "gcq.idx"),
+		config:            cfg,
+		ctx:               ctx,
+		cancel:            cancel,
+		projectPath:       projectPath,
+		socketPath:        socketPath,
+		indexPath:         indexPath,
+		dirtyFiles:        make(map[string]bool),
+		dirtyCount:        0,
+		reindexThreshold:  20,
+		reindexInProgress: false,
 	}
 
 	var err error
@@ -72,6 +112,14 @@ func NewDaemon(cfg *config.Config) (*Daemon, error) {
 
 	dimension := d.getEmbeddingDimension()
 	d.index = index.NewVectorIndex(dimension)
+
+	// Create .gcq directory if it doesn't exist
+	if d.projectPath != "" {
+		gcqDir := filepath.Join(d.projectPath, ".gcq")
+		if err := os.MkdirAll(gcqDir, 0755); err != nil {
+			log.Printf("Warning: could not create .gcq directory: %v", err)
+		}
+	}
 
 	if err := d.index.Load(d.indexPath); err != nil {
 		log.Printf("No existing index found or error loading: %v", err)
@@ -178,10 +226,7 @@ func (d *Daemon) StartSocketServer() error {
 	var listener net.Listener
 	var err error
 
-	socketPath := d.config.SocketPath
-	if socketPath == "" {
-		socketPath = DefaultSocketPath
-	}
+	socketPath := d.socketPath
 
 	if isWindows() {
 		port := os.Getenv("GCQ_TCP_PORT")
@@ -307,6 +352,8 @@ func (d *Daemon) handleCommand(cmd Command) Response {
 		return d.handleCalls(cmd)
 	case "warm":
 		return d.handleWarm(cmd)
+	case "notify":
+		return d.handleNotify(cmd)
 	case "stop":
 		return d.handleStop(cmd)
 	default:
@@ -324,12 +371,14 @@ func (d *Daemon) handleStatus(cmd Command) Response {
 	count, dim := d.searcher.IndexStats()
 
 	result := map[string]interface{}{
-		"version":     version,
-		"status":      "running",
-		"index_count": count,
-		"dimension":   dim,
-		"provider":    d.config.Provider,
-		"model":       d.getModelName(),
+		"version":             version,
+		"status":              "running",
+		"index_count":         count,
+		"dimension":           dim,
+		"provider":            d.config.Provider,
+		"model":               d.getModelName(),
+		"dirty_count":         d.dirtyCount,
+		"reindex_in_progress": d.reindexInProgress,
 	}
 
 	resultJSON, err := json.Marshal(result)
@@ -779,6 +828,116 @@ func (d *Daemon) handleWarm(cmd Command) Response {
 	}
 }
 
+type NotifyParams struct {
+	Path string `json:"path"`
+}
+
+func (d *Daemon) handleNotify(cmd Command) Response {
+	var params NotifyParams
+	if err := json.Unmarshal(cmd.Params, &params); err != nil {
+		return Response{ID: cmd.ID, Error: fmt.Sprintf("invalid params: %v", err)}
+	}
+
+	if params.Path == "" {
+		return Response{ID: cmd.ID, Error: "path is required"}
+	}
+
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	if !d.dirtyFiles[params.Path] {
+		d.dirtyFiles[params.Path] = true
+		d.dirtyCount++
+		log.Printf("Dirty file tracked: %s (count: %d)", params.Path, d.dirtyCount)
+	}
+
+	shouldReindex := d.dirtyCount >= d.reindexThreshold && !d.reindexInProgress
+
+	if shouldReindex {
+		d.reindexInProgress = true
+		go d.triggerBackgroundReindex()
+	}
+
+	result := map[string]interface{}{
+		"status":            "ok",
+		"path":              params.Path,
+		"dirty_count":       d.dirtyCount,
+		"threshold":         d.reindexThreshold,
+		"reindex_triggered": shouldReindex,
+	}
+
+	resultJSON, err := json.Marshal(result)
+	if err != nil {
+		return Response{ID: cmd.ID, Error: fmt.Sprintf("marshal error: %v", err)}
+	}
+
+	return Response{
+		ID:     cmd.ID,
+		Type:   "notify",
+		Result: resultJSON,
+	}
+}
+
+func (d *Daemon) triggerBackgroundReindex() {
+	log.Printf("Triggering background reindex for %d dirty files", d.dirtyCount)
+
+	d.mu.Lock()
+	files := make([]string, 0, len(d.dirtyFiles))
+	for f := range d.dirtyFiles {
+		files = append(files, f)
+	}
+	d.mu.Unlock()
+
+	for _, file := range files {
+		select {
+		case <-d.ctx.Done():
+			return
+		default:
+		}
+
+		moduleInfo, err := extractor.ExtractFile(file)
+		if err != nil {
+			log.Printf("Error re-extracting %s: %v", file, err)
+			continue
+		}
+
+		cg, err := d.callGraph.BuildFromFile(file, moduleInfo)
+		if err == nil {
+			moduleInfo.CallGraph = cg.ToCallGraph()
+		}
+
+		unit := types.EmbeddingUnit{
+			L1Data: *moduleInfo,
+			L2Data: moduleInfo.CallGraph.Edges,
+		}
+
+		text := moduleInfoToText(moduleInfo)
+		embeddings, err := d.embedder.Embed([]string{text})
+		if err != nil {
+			log.Printf("Error re-embedding %s: %v", file, err)
+			continue
+		}
+
+		d.mu.Lock()
+		if err := d.index.Add(file, embeddings[0], unit); err != nil {
+			log.Printf("Error re-adding to index: %v", err)
+		}
+		d.mu.Unlock()
+	}
+
+	d.mu.Lock()
+	if err := d.index.Save(d.indexPath); err != nil {
+		log.Printf("Error saving index after reindex: %v", err)
+	}
+
+	d.dirtyFiles = make(map[string]bool)
+	d.dirtyCount = 0
+	d.reindexInProgress = false
+	d.mu.Unlock()
+
+	log.Printf("Background reindex completed for %d files", len(files))
+}
+
 func (d *Daemon) handleStop(cmd Command) Response {
 	d.Stop()
 
@@ -805,6 +964,7 @@ func (d *Daemon) Stop() {
 func main() {
 	socketPath := ""
 	configPath := ""
+	projectPath := ""
 	verbose := false
 
 	for i := 1; i < len(os.Args); i++ {
@@ -812,6 +972,11 @@ func main() {
 		case "-socket", "--socket":
 			if i+1 < len(os.Args) {
 				socketPath = os.Args[i+1]
+				i++
+			}
+		case "-project", "--project":
+			if i+1 < len(os.Args) {
+				projectPath = os.Args[i+1]
 				i++
 			}
 		case "-config", "--config":
@@ -827,12 +992,18 @@ func main() {
 		case "-h", "--help", "-help":
 			fmt.Println("Usage: gcqd [options]")
 			fmt.Println("Options:")
-			fmt.Println("  -socket PATH   Unix socket path (default: /tmp/gcq.sock)")
-			fmt.Println("  -config PATH   Config file path")
-			fmt.Println("  -v, -verbose  Verbose logging")
-			fmt.Println("  -h, -help     Show this help")
+			fmt.Println("  -project PATH  Project root path for per-project daemon isolation")
+			fmt.Println("  -socket PATH  Unix socket path (default: auto-computed from project)")
+			fmt.Println("  -config PATH  Config file path")
+			fmt.Println("  -v, -verbose Verbose logging")
+			fmt.Println("  -h, -help    Show this help")
 			os.Exit(0)
 		}
+	}
+
+	// If project path provided, compute socket from it (unless explicitly set)
+	if projectPath != "" && socketPath == "" {
+		socketPath = computeSocketPath(projectPath)
 	}
 
 	var cfg *config.Config
@@ -857,12 +1028,23 @@ func main() {
 		log.SetOutput(io.Discard)
 	}
 
-	daemon, err := NewDaemon(cfg)
+	daemon, err := NewDaemon(cfg, projectPath)
 	if err != nil {
 		log.Fatalf("Failed to create daemon: %v", err)
 	}
 
 	log.Printf("Starting gcqd v%s", version)
+
+	if projectPath != "" {
+		gcqDir := filepath.Join(projectPath, ".gcq")
+		if err := os.MkdirAll(gcqDir, 0755); err != nil {
+			log.Printf("Warning: could not create .gcq directory: %v", err)
+		}
+		pidFile := filepath.Join(gcqDir, "daemon.pid")
+		if err := os.WriteFile(pidFile, []byte(fmt.Sprintf("%d", os.Getpid())), 0644); err != nil {
+			log.Printf("Warning: could not write PID file: %v", err)
+		}
+	}
 
 	if err := daemon.StartSocketServer(); err != nil {
 		log.Fatalf("Server error: %v", err)

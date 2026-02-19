@@ -118,6 +118,64 @@ Check out the [README](../README.md) for usage examples:
 - `gcq semantic "find auth code"` - Search your codebase
 - `gcq context main.py` - Get LLM-ready context
 
+## Daemon (Optional)
+
+The daemon keeps the index loaded in memory for faster queries.
+
+### Starting the Daemon
+
+```bash
+# Start for current project
+./bin/gcq start -d
+
+# Start for specific project
+./bin/gcq start -d --project /path/to/project
+```
+
+### Checking Status
+
+```bash
+./bin/gcq status
+```
+
+### Stopping the Daemon
+
+```bash
+./bin/gcq stop
+```
+
+### Per-Project Isolation
+
+Each project can have its own daemon with isolated index:
+
+```bash
+# Project A
+cd /path/to/project-a
+./bin/gcq start -d
+
+# Project B (separate daemon)
+cd /path/to/project-b
+./bin/gcq start -d
+```
+
+The daemon automatically creates:
+- Socket: `/tmp/gcq-{project_hash}.sock`
+- Index: `{project}/.gcq/index.idx`
+
+### Notifying Changes
+
+Tell the daemon when files change:
+
+```bash
+# Single file
+./bin/gcq notify ./src/auth.go
+
+# After git changes
+git diff --name-only HEAD | xargs -I{} ./bin/gcq notify {}
+```
+
+The daemon will reindex changed files automatically (threshold: 20 files).
+
 ## Troubleshooting
 
 ### "Command not found"

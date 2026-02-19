@@ -4,9 +4,11 @@
 package main
 
 import (
+	"crypto/md5"
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/l3aro/go-context-query/cmd/gcq/commands"
@@ -21,6 +23,17 @@ var (
 	version   = "dev"
 	buildTime = ""
 )
+
+func computeSocketPath(projectPath string) string {
+	if projectPath == "" || projectPath == "." {
+		absPath, _ := filepath.Abs(projectPath)
+		hash := md5.Sum([]byte(absPath))
+		return fmt.Sprintf("/tmp/gcq-%x.sock", hash[:8])
+	}
+	absPath, _ := filepath.Abs(projectPath)
+	hash := md5.Sum([]byte(absPath))
+	return fmt.Sprintf("/tmp/gcq-%x.sock", hash[:8])
+}
 
 func main() {
 	// Add build command
@@ -40,19 +53,33 @@ func main() {
 
 	// Add start command
 	startCmd := &cobra.Command{
-		Use:   "start [flags]",
+		Use:   "start [project]",
 		Short: "Start daemon",
+		Long: `Start daemon for the project. If no project path is specified,
+uses the current working directory.`,
+		Args: cobra.RangeArgs(0, 1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			daemonPath, _ := cmd.Flags().GetString("daemon")
 			socketPath, _ := cmd.Flags().GetString("socket")
+			projectPath, _ := cmd.Flags().GetString("project")
 			configPath, _ := cmd.Flags().GetString("config")
 			verbose, _ := cmd.Flags().GetBool("v")
 			background, _ := cmd.Flags().GetBool("d")
-			return runStart(daemonPath, socketPath, configPath, verbose, background)
+
+			// Use flag value or positional arg or default to "."
+			if projectPath == "" && len(args) > 0 {
+				projectPath = args[0]
+			}
+			if projectPath == "" {
+				projectPath = "."
+			}
+
+			return runStart(daemonPath, socketPath, projectPath, configPath, verbose, background)
 		},
 	}
 	startCmd.Flags().String("daemon", "", "Path to daemon binary")
-	startCmd.Flags().String("socket", "", "Unix socket path")
+	startCmd.Flags().String("socket", "", "Unix socket path (default: auto-computed from project)")
+	startCmd.Flags().String("project", "", "Project root path (default: current directory)")
 	startCmd.Flags().String("config", "", "Config file path")
 	startCmd.Flags().BoolP("v", "v", false, "Verbose logging")
 	startCmd.Flags().BoolP("d", "d", false, "Run in background")
@@ -62,9 +89,15 @@ func main() {
 		Use:   "stop",
 		Short: "Stop daemon",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			projectPath, _ := cmd.Flags().GetString("project")
+			if projectPath == "" {
+				projectPath = "."
+			}
+			os.Setenv("GCQ_SOCKET_PATH", computeSocketPath(projectPath))
 			return runStop()
 		},
 	}
+	stopCmd.Flags().StringP("project", "p", "", "Project path (default: current directory)")
 
 	// Add status command
 	statusCmd := &cobra.Command{
@@ -72,10 +105,16 @@ func main() {
 		Short: "Show daemon status",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			jsonOutput, _ := cmd.Flags().GetBool("json")
+			projectPath, _ := cmd.Flags().GetString("project")
+			if projectPath == "" {
+				projectPath = "."
+			}
+			os.Setenv("GCQ_SOCKET_PATH", computeSocketPath(projectPath))
 			return runStatus(jsonOutput)
 		},
 	}
 	statusCmd.Flags().BoolP("json", "j", false, "Output as JSON")
+	statusCmd.Flags().StringP("project", "p", "", "Project path (default: current directory)")
 
 	// Add all commands to root
 	commands.RootCmd.AddCommand(buildCmd)
@@ -144,13 +183,17 @@ func runBuild(projectPath, providerType, modelName string) error {
 	return semantic.BuildIndex(projectPath, provider)
 }
 
-func runStart(daemonPath, socketPath, configPath string, verbose, background bool) error {
+func runStart(daemonPath, socketPath, projectPath, configPath string, verbose, background bool) error {
+	// For background mode, don't wait for ready - just spawn and return
+	waitForReady := !background
+
 	opts := &daemon.StartOptions{
 		DaemonPath:   daemonPath,
 		SocketPath:   socketPath,
+		ProjectPath:  projectPath,
 		ConfigPath:   configPath,
 		Verbose:      verbose,
-		WaitForReady: true,
+		WaitForReady: waitForReady,
 		ReadyTimeout: 10 * time.Second,
 		Background:   background,
 	}

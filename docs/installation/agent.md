@@ -192,6 +192,69 @@ The skill provides:
 - Workflows for common analysis tasks
 - Configuration guidance
 
+## Daemon
+
+For persistent indexing and faster queries, use the daemon:
+
+### Start Daemon
+
+```bash
+# Current project
+./gcq start -d
+
+# Specific project
+./gcq start -d --project /path/to/project
+
+# With verbose logging
+./gcq start -d -v
+```
+
+### Daemon Commands
+
+```bash
+# Status
+./gcq status
+./gcq status --project /path/to/project
+
+# Stop
+./gcq stop
+./gcq stop --project /path/to/project
+```
+
+### Per-Project Isolation
+
+Each project gets isolated socket and index:
+
+```bash
+# Project A
+cd /path/to/project-a
+./gcq start -d
+# Socket: /tmp/gcq-{md5_hash_a}.sock
+
+# Project B (separate)
+cd /path/to/project-b  
+./gcq start -d
+# Socket: /tmp/gcq-{md5_hash_b}.sock
+```
+
+Socket path: `/tmp/gcq-{md5(project_path[:8])}.sock`
+Index path: `{project}/.gcq/index.idx`
+
+### Notify (File Changes)
+
+```bash
+# Single file
+./gcq notify ./src/auth.go
+
+# Batch via git
+git diff --name-only HEAD | xargs -I{} ./gcq notify {}
+
+# Via socket directly
+echo '{"type": "notify", "params": {"path": "./main.go"}}' | nc -U /tmp/gcq-{hash}.sock -w 2
+```
+
+Auto-reindex triggers at 20 dirty files.
+
 ## Agent Configuration Interview Pattern
 
 When helping users configure gcq, agents should use the `question` tool to interview users:

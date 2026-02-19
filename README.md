@@ -197,10 +197,87 @@ search_hf_model: bge-m3
 
 ## Daemon
 
-Start the daemon for persistent indexing:
+The daemon provides persistent indexing and faster queries by keeping the index loaded in memory.
+
+### Quick Start
 
 ```bash
-./bin/gcqd
+# Start daemon for current project (uses cwd)
+./bin/gcq start
+
+# Start daemon for specific project
+./bin/gcq start --project /path/to/project
+
+# Check daemon status
+./bin/gcq status
+
+# Stop daemon
+./bin/gcq stop
+```
+
+### Per-Project Isolation
+
+Each project gets its own daemon with isolated socket and index:
+
+```bash
+# Project A daemon: /tmp/gcq-{hash_a}.sock
+cd /path/to/project-a
+./bin/gcq start -d
+
+# Project B daemon: /tmp/gcq-{hash_b}.sock  
+cd /path/to/project-b
+./bin/gcq start -d
+```
+
+Socket path is computed from project path hash: `/tmp/gcq-{md5(project_path)[:8]}.sock`
+
+Index is stored in: `{project}/.gcq/index.idx`
+
+### Daemon Commands
+
+```bash
+# Start daemon in background
+./bin/gcq start -d
+./bin/gcq start -d --project /path/to/project
+
+# Check status
+./bin/gcq status
+./bin/gcq status --project /path/to/project
+
+# Stop daemon
+./bin/gcq stop
+./bin/gcq stop --project /path/to/project
+```
+
+### Notify (File Change Tracking)
+
+Tell the daemon that files have changed:
+
+```bash
+# Single file
+./bin/gcq notify ./src/auth.go
+
+# Multiple files (via git)
+git diff --name-only HEAD | xargs -I{} ./bin/gcq notify {}
+
+# Or send directly via socket
+echo '{"type": "notify", "params": {"path": "./src/main.go"}}' | nc -U /tmp/gcq-{hash}.sock
+```
+
+When dirty file count reaches threshold (20), daemon automatically reindexes in background.
+
+### Direct Daemon Binary
+
+Run daemon directly:
+
+```bash
+# With explicit project path
+./bin/gcqd -project /path/to/project
+
+# With explicit socket
+./bin/gcqd -socket /tmp/custom.sock
+
+# Daemon stays running until stopped (Ctrl+C)
 ```
 
 ## Makefile Targets

@@ -164,8 +164,7 @@ func IsProcessRunning(pid int) bool {
 
 // GetSocketPath returns the socket path from config or default
 func GetSocketPath() string {
-	socketPath := os.Getenv("GCQ_SOCKET_PATH")
-	if socketPath != "" {
+	if socketPath := os.Getenv("GCQ_SOCKET_PATH"); socketPath != "" {
 		return socketPath
 	}
 	return DefaultSocketPath
