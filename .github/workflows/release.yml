@@ -19,6 +19,9 @@ jobs:
           - os: ubuntu-latest
             goos: linux
             arch: amd64
+          - os: macos-14
+            goos: darwin
+            arch: arm64
           - os: macos-latest
             goos: darwin
             arch: amd64
