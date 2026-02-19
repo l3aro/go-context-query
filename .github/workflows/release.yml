@@ -28,7 +28,6 @@ jobs:
           - os: windows-latest
             goos: windows
             arch: amd64
-            ext: .exe
 
     steps:
       - name: Checkout
@@ -45,16 +44,16 @@ jobs:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.arch }}
         run: |
-          go build -ldflags="-X main.version=${GITHUB_REF#refs/tags/}" -o dist/gcq-${{ matrix.goos }}-${{ matrix.arch }}${{ matrix.ext }} ./cmd/gcq
-          go build -ldflags="-X main.version=${GITHUB_REF#refs/tags/}" -o dist/gcqd-${{ matrix.goos }}-${{ matrix.arch }}${{ matrix.ext }} ./cmd/gcqd
+          go build -ldflags="-X main.version=${GITHUB_REF#refs/tags/}" -o dist/gcq-${{ matrix.goos }}-${{ matrix.arch }} ./cmd/gcq
+          go build -ldflags="-X main.version=${GITHUB_REF#refs/tags/}" -o dist/gcqd-${{ matrix.goos }}-${{ matrix.arch }} ./cmd/gcqd
 
       - name: Upload Release Asset
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
           files: |
-            dist/gcq-${{ matrix.goos }}-${{ matrix.arch }}${{ matrix.ext }}
-            dist/gcqd-${{ matrix.goos }}-${{ matrix.arch }}${{ matrix.ext }}
+            dist/gcq-${{ matrix.goos }}-${{ matrix.arch }}
+            dist/gcqd-${{ matrix.goos }}-${{ matrix.arch }}
           draft: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
