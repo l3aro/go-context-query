@@ -1,5 +1,5 @@
-// Package daemon provides lifecycle management for the go-context-query daemon.
-// It handles PID file management, status tracking, and start/stop/status commands.
+//go:build !windows
+
 package daemon
 
 import (
@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"syscall"
 	"time"
@@ -81,8 +82,10 @@ func Start(opts *StartOptions) (*StartResult, error) {
 	}
 
 	if opts.Background {
-		cmd.SysProcAttr = &syscall.SysProcAttr{
-			Setsid: true,
+		if runtime.GOOS != "windows" {
+			cmd.SysProcAttr = &syscall.SysProcAttr{
+				Setsid: true,
+			}
 		}
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
