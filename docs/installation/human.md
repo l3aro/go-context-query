@@ -1,5 +1,16 @@
 # Installation Guide
 
+## For Humans
+
+Paste this into your LLM agent session:
+
+```
+Install and configure go-context-query by following the instructions here:
+https://raw.githubusercontent.com/l3aro/go-context-query/main/docs/installation/agent.md
+```
+
+---
+
 Welcome! This guide will help you get go-context-query up and running on your machine.
 
 ## Download Standalone Binary
@@ -8,22 +19,26 @@ Welcome! This guide will help you get go-context-query up and running on your ma
 
 Visit the [Releases](https://github.com/l3aro/go-context-query/releases) page and download the binary for your OS:
 
-| OS      | Architecture | Download                           |
-| ------- | ------------ | ----------------------------------|
-| Linux   | x64          | `gcq_Linux_x86_64.tar.gz`         |
-| Linux   | ARM64        | `gcq_Linux_arm64.tar.gz`          |
-| macOS   | x64          | `gcq_Darwin_x86_64.tar.gz`        |
-| macOS   | ARM64        | `gcq_Darwin_arm64.tar.gz`         |
-| Windows | x64          | `gcq_Windows_x86_64.zip`          |
+| OS      | Architecture | Download                     |
+| ------- | ------------ | ------------------------------|
+| Linux   | amd64        | `gcq-linux-amd64`             |
+| macOS   | amd64        | `gcq-darwin-amd64`            |
+| macOS   | arm64        | `gcq-darwin-arm64`            |
+| Windows | amd64        | `gcq-windows-amd64`           |
 
 Or use curl:
 
 ```bash
-# Example for Linux x64
-curl -sL https://github.com/l3aro/go-context-query/releases/latest/download/gcq_Linux_x86_64.tar.gz | tar xz
+# Example for Linux amd64
+curl -sL https://github.com/l3aro/go-context-query/releases/latest/download/gcq-linux-amd64 -o gcq
+chmod +x gcq
 
 # Example for macOS ARM64
-curl -sL https://github.com/l3aro/go-context-query/releases/latest/download/gcq_Darwin_arm64.tar.gz | tar xz
+curl -sL https://github.com/l3aro/go-context-query/releases/latest/download/gcq-darwin-arm64 -o gcq
+chmod +x gcq
+
+# Example for Windows (PowerShell)
+Invoke-WebRequest -Uri "https://github.com/l3aro/go-context-query/releases/latest/download/gcq-windows-amd64" -OutFile "gcq.exe"
 ```
 
 ### Step 2: Make Executable (Linux/macOS)

@@ -9,12 +9,11 @@ This guide provides direct, scriptable commands for automated installation.
 OS=$(uname -s | tr '[:upper:]' '[:lower:]')
 ARCH=$(uname -m)
 case $ARCH in
-  x86_64) ARCH="x86_64" ;;
+  x86_64) ARCH="amd64" ;;
   arm64|aarch64) ARCH="arm64" ;;
 esac
 
-curl -sL "https://github.com/l3aro/go-context-query/releases/latest/download/gcq_${OS}_${ARCH}.tar.gz" | tar xz
-
+curl -sL "https://github.com/l3aro/go-context-query/releases/latest/download/gcq-${OS}-${ARCH}" -o gcq
 chmod +x gcq
 
 # Setup binary location
