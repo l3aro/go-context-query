@@ -44,4 +44,5 @@ build/
 # .agents/ - keep tracked for gcq skill
 .windsurf/
 .sisyphus/
-.gcq
+.gcq/
+.agents/
