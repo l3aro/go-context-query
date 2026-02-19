@@ -37,16 +37,16 @@ jobs:
           CGO_ENABLED: 1
           GOOS: ${{ matrix.goos }}
         run: |
-          go build -ldflags="-X main.version=${GITHUB_REF#refs/tags/}" -o dist/gcq ./cmd/gcq
-          go build -ldflags="-X main.version=${GITHUB_REF#refs/tags/}" -o dist/gcqd ./cmd/gcqd
+          go build -ldflags="-X main.version=${GITHUB_REF#refs/tags/}" -o dist/gcq-${{ matrix.goos }}-amd64 ./cmd/gcq
+          go build -ldflags="-X main.version=${GITHUB_REF#refs/tags/}" -o dist/gcqd-${{ matrix.goos }}-amd64 ./cmd/gcqd
 
       - name: Upload Release Asset
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
           files: |
-            dist/gcq
-            dist/gcqd
+            dist/gcq-${{ matrix.goos }}-amd64
+            dist/gcqd-${{ matrix.goos }}-amd64
           draft: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
