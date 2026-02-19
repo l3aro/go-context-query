@@ -38,7 +38,7 @@ builds:
     ldflags:
       - -s -w
       - -X main.version={{.Version}}
-      - -X main.buildTime={{.Date "2006-01-02_15:04:05"}}
+      - -X main.buildTime={{.RawDate}}
 
   - id: gcqd
     main: ./cmd/gcqd
@@ -55,7 +55,7 @@ builds:
     ldflags:
       - -s -w
       - -X main.version={{.Version}}
-      - -X main.buildTime={{.Date "2006-01-02_15:04:05"}}
+      - -X main.buildTime={{.RawDate}}
 
 checksum:
   name_template: checksums.txt
