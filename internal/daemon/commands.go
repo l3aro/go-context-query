@@ -1,4 +1,5 @@
 //go:build !windows
+// +build !windows
 
 package daemon
 
@@ -10,9 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
-	"syscall"
 	"time"
 )
 
@@ -82,11 +81,6 @@ func Start(opts *StartOptions) (*StartResult, error) {
 	}
 
 	if opts.Background {
-		if runtime.GOOS != "windows" {
-			cmd.SysProcAttr = &syscall.SysProcAttr{
-				Setsid: true,
-			}
-		}
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 	} else {
