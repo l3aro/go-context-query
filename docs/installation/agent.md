@@ -292,6 +292,37 @@ gcq init --warm-provider ollama --warm-model nomic-embed-text --skip-health-chec
 
 When helping users set up gcq for the first time, replicate the `gcq init` interactive flow by asking questions step-by-step. Use the `question` tool to gather configuration details.
 
+### Step 0: Check Existing Installation
+
+Before starting the interview, check if gcq is already installed:
+
+```bash
+# Check if gcq exists
+which gcq || echo "not found"
+
+# Check current version
+gcq --version
+```
+
+Ask: **"I found gcq is already installed. Would you like me to update it to the latest version, or can we proceed with the current version?"**
+
+If user wants to update:
+```bash
+# Download latest release
+OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+ARCH=$(uname -m)
+case $ARCH in
+  x86_64) ARCH="amd64" ;;
+  arm64|aarch64) ARCH="arm64" ;;
+esac
+
+curl -sL "https://github.com/l3aro/go-context-query/releases/latest/download/gcq-${OS}-${ARCH}" -o gcq
+chmod +x gcq
+
+# Replace existing binary
+mv gcq ~/.local/bin/  # or wherever gcq is installed
+```
+
 ### Step 1: Warm Model Provider
 
 Ask: **"What embedding provider do you want to use for indexing/warming your codebase?"**
@@ -373,9 +404,20 @@ This enables:
 ### Complete Interview Flow Example
 
 ```
-Agent: Hi! I'll help you set up gcq for semantic code analysis. Let me ask you a few questions.
+Agent: Hi! I'll help you set up gcq for semantic code analysis.
 
-Agent: First, which embedding provider do you want to use for indexing your codebase?
+Agent: First, let me check if gcq is already installed...
+
+(which gcq output)
+
+Agent: gcq is already installed (version X.X.X). Would you like me to update it to the latest version, or can we proceed with the current version?
+
+User: Let's update to the latest version
+
+Agent: Great! Updating gcq...
+(download and install latest version)
+
+Agent: Now, which embedding provider do you want to use for indexing your codebase?
   - Ollama (local, privacy-friendly)
   - HuggingFace (cloud-based)
 
