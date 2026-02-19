@@ -13,7 +13,7 @@ case $ARCH in
   arm64|aarch64) ARCH="arm64" ;;
 esac
 
-curl -sL "https://github.com/vectordotdev/go-context-query/releases/latest/download/gcq_${OS}_${ARCH}.tar.gz" | tar xz
+curl -sL "https://github.com/l3aro/go-context-query/releases/latest/download/gcq_${OS}_${ARCH}.tar.gz" | tar xz
 
 chmod +x gcq
 
@@ -177,14 +177,14 @@ For agents that support skill loading, install the gcq skill:
 
 ```bash
 # Clone the repository with skills
-git clone https://github.com/vectordotdev/go-context-query.git
+git clone https://github.com/l3aro/go-context-query.git
 
 # Copy skill to agent skills directory
 cp -r go-context-query/.agents/skills/gcq ~/.agents/skills/
 
 # Or download just the skill file
 mkdir -p ~/.agents/skills/gcq
-curl -sL https://raw.githubusercontent.com/vectordotdev/go-context-query/main/.agents/skills/gcq/SKILL.md \
+curl -sL https://raw.githubusercontent.com/l3aro/go-context-query/main/.agents/skills/gcq/SKILL.md \
   -o ~/.agents/skills/gcq/SKILL.md
 ```
 

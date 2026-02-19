@@ -63,7 +63,7 @@ checksum:
 
 release:
   github:
-    owner: vectordotdev
+    owner: l3aro
     name: go-context-query
   draft: false
   prerelease: auto

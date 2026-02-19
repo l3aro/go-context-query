@@ -12,7 +12,7 @@ Before you begin, make sure you have:
 
 ### Step 1: Download
 
-Visit the [Releases](https://github.com/vectordotdev/go-context-query/releases) page and download the binary for your OS:
+Visit the [Releases](https://github.com/l3aro/go-context-query/releases) page and download the binary for your OS:
 
 | OS      | Architecture | Download                           |
 | ------- | ------------ | ----------------------------------|
@@ -26,10 +26,10 @@ Or use curl:
 
 ```bash
 # Example for Linux x64
-curl -sL https://github.com/vectordotdev/go-context-query/releases/latest/download/gcq_Linux_x86_64.tar.gz | tar xz
+curl -sL https://github.com/l3aro/go-context-query/releases/latest/download/gcq_Linux_x86_64.tar.gz | tar xz
 
 # Example for macOS ARM64
-curl -sL https://github.com/vectordotdev/go-context-query/releases/latest/download/gcq_Darwin_arm64.tar.gz | tar xz
+curl -sL https://github.com/l3aro/go-context-query/releases/latest/download/gcq_Darwin_arm64.tar.gz | tar xz
 ```
 
 ### Step 2: Make Executable (Linux/macOS)
