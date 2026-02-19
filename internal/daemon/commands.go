@@ -15,32 +15,6 @@ import (
 	"time"
 )
 
-// StartOptions contains options for starting the daemon
-type StartOptions struct {
-	// DaemonPath is the path to the daemon executable
-	DaemonPath string
-	// SocketPath is the Unix socket path
-	SocketPath string
-	// ConfigPath is the path to the config file
-	ConfigPath string
-	// Verbose enables verbose logging
-	Verbose bool
-	// WaitForReady indicates whether to wait for the daemon to be ready
-	WaitForReady bool
-	// ReadyTimeout is the timeout for waiting daemon to be ready
-	ReadyTimeout time.Duration
-	// Background indicates whether to run in background
-	Background bool
-}
-
-// StartResult contains the result of a start operation
-type StartResult struct {
-	Success   bool      `json:"success"`
-	PID       int       `json:"pid,omitempty"`
-	Error     string    `json:"error,omitempty"`
-	StartedAt time.Time `json:"started_at"`
-}
-
 // Start starts the daemon
 func Start(opts *StartOptions) (*StartResult, error) {
 	// Check if already running
@@ -207,14 +181,6 @@ func waitForReady(ctx context.Context, timeout time.Duration) (bool, error) {
 	}
 
 	return false, fmt.Errorf("timeout waiting for daemon to be ready")
-}
-
-// StopResult contains the result of a stop operation
-type StopResult struct {
-	Success   bool      `json:"success"`
-	PID       int       `json:"pid,omitempty"`
-	StoppedAt time.Time `json:"stopped_at"`
-	Error     string    `json:"error,omitempty"`
 }
 
 // Stop stops the daemon
