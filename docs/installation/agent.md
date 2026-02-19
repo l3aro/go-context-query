@@ -345,8 +345,10 @@ Options:
 - Ask: **"Do you have an Ollama API key?"** (required for cloud, optional for local)
 
 **If HuggingFace selected:**
-- Ask: **"Which HuggingFace model do you want to use?"**
-- Ask: **"Do you have a HuggingFace API token?"** (required)
+- Ask: **"Is your HuggingFace endpoint running locally (e.g., HuggingFace Inference Container), or is it the cloud-based HuggingFace Hub?"**
+- If local: Ask: **"What is your HuggingFace base URL?"** (e.g., http://localhost:8080)
+- If cloud: Ask: **"Which HuggingFace model do you want to use?"**
+- Ask: **"Do you have a HuggingFace API token?"** (required for cloud, optional for local)
 
 **Wait for user answers before proceeding.**
 
@@ -371,8 +373,10 @@ Repeat Step 2 questions for search provider:
 - Ask: **"Do you have an Ollama API key?"**
 
 **If HuggingFace selected:**
-- Ask: **"Which HuggingFace model do you want to use for search?"**
-- Ask: **"Do you have a HuggingFace API token?"**
+- Ask: **"Is your HuggingFace endpoint running locally (e.g., HuggingFace Inference Container), or is it the cloud-based HuggingFace Hub?"**
+- If local: Ask: **"What is your HuggingFace base URL for search?"**
+- If cloud: Ask: **"Which HuggingFace model do you want to use for search?"**
+- Ask: **"Do you have a HuggingFace API token?"** (required for cloud, optional for local)
 
 **Wait for user answers before proceeding.**
 
