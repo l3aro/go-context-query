@@ -26,3 +26,13 @@ type StopResult struct {
 	StoppedAt time.Time `json:"stopped_at"`
 	Error     string    `json:"error,omitempty"`
 }
+
+type StatusResult struct {
+	Status    string    `json:"status"`
+	Running   bool      `json:"running"`
+	Ready     bool      `json:"ready"`
+	PID       int       `json:"pid,omitempty"`
+	Version   string    `json:"version,omitempty"`
+	StartedAt time.Time `json:"started_at,omitempty"`
+	Error     string    `json:"error,omitempty"`
+}

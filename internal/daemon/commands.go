@@ -320,17 +320,6 @@ func Status() (*DaemonStatus, error) {
 	return CheckStatus()
 }
 
-// StatusResult contains the result of a status operation
-type StatusResult struct {
-	Status    string    `json:"status"`
-	Running   bool      `json:"running"`
-	Ready     bool      `json:"ready"`
-	PID       int       `json:"pid,omitempty"`
-	Version   string    `json:"version,omitempty"`
-	StartedAt time.Time `json:"started_at,omitempty"`
-	Error     string    `json:"error,omitempty"`
-}
-
 // GetStatus returns a formatted status result
 func GetStatus() (*StatusResult, error) {
 	status, err := CheckStatus()

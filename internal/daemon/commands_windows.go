@@ -172,3 +172,23 @@ func waitForReady(socketPath string, timeout time.Duration) error {
 	}
 	return fmt.Errorf("timeout waiting for daemon ready")
 }
+
+func GetStatus() (*StatusResult, error) {
+	status, err := CheckStatus()
+	if err != nil {
+		return &StatusResult{
+			Status:  "unknown",
+			Running: false,
+			Ready:   false,
+			Error:   err.Error(),
+		}, nil
+	}
+
+	return &StatusResult{
+		Status:    "running",
+		Running:   status.Running,
+		Ready:     status.Ready,
+		PID:       status.PID,
+		StartedAt: status.StartedAt,
+	}, nil
+}
