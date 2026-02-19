@@ -292,6 +292,8 @@ gcq init --warm-provider ollama --warm-model nomic-embed-text --skip-health-chec
 
 When helping users set up gcq for the first time, replicate the `gcq init` interactive flow by asking questions step-by-step. Use the `question` tool to gather configuration details.
 
+**IMPORTANT**: NEVER assume user preferences. ALWAYS ask explicitly, even for optional settings. Do not use default values unless the user explicitly confirms them.
+
 ### Step 0: Check Existing Installation
 
 Before starting the interview, check if gcq is already installed:
@@ -331,30 +333,33 @@ Options:
 - Ollama (local, privacy-friendly)
 - HuggingFace (cloud-based)
 
+**Wait for user answer before proceeding.**
+
 ### Step 2: Provider-Specific Details
 
 **If Ollama selected:**
-- Ask: **"What's your Ollama base URL?"** (default: http://localhost:11434)
-- Ask: **"Which Ollama model do you want to use?"** (default: nomic-embed-text)
-- Ask: **"Do you have an Ollama API key?"** (optional, press Enter to skip)
+- Ask: **"What is your Ollama base URL?"** (e.g., http://localhost:11434)
+- Ask: **"Which Ollama model do you want to use?"**
+- Ask: **"Do you have an Ollama API key?"** (optional)
 
 **If HuggingFace selected:**
-- Ask: **"Which HuggingFace model do you want to use?"** (default: google/embeddinggemma-300m)
+- Ask: **"Which HuggingFace model do you want to use?"**
 - Ask: **"Do you have a HuggingFace API token?"** (optional)
+
+**Wait for user answers before proceeding.**
 
 ### Step 3: Search Model
 
 Ask: **"Do you want to use the same model for both indexing and search, or configure a different one for search?"**
 
-- **Yes, use same model** → Search inherits warm settings
-- **No, configure separately** → Follow Step 2 questions again for search provider
+- **Same model** → Search inherits warm settings
+- **Different model** → Follow Step 2 questions again for search provider
+
+**Wait for user answer before proceeding.**
 
 ### Step 4: Project Location
 
-Ask: **"Where should the configuration be saved?"**
-
-- **Project** (default) → Saves to `.gcq/config.yaml` in current directory
-- Note: Global config is deprecated
+Ask: **"Where should the configuration be saved?"** (typically the current project directory)
 
 ### Step 5: Generate Command
 
@@ -417,29 +422,34 @@ User: Let's update to the latest version
 Agent: Great! Updating gcq...
 (download and install latest version)
 
-Agent: Now, which embedding provider do you want to use for indexing your codebase?
+Agent: Now, let's configure gcq. What embedding provider do you want to use for indexing/warming your codebase?
   - Ollama (local, privacy-friendly)
   - HuggingFace (cloud-based)
 
 User: Ollama
 
-Agent: What's your Ollama base URL? (press Enter for default http://localhost:11434)
+Agent: What is your Ollama base URL?
 
-User: (press Enter)
+User: http://localhost:11434
 
-Agent: Which Ollama model do you want to use? (default: nomic-embed-text)
+Agent: Which Ollama model do you want to use?
 
 User: nomic-embed-text
 
-Agent: Do you want to use a different model for search queries, or the same as your indexing model?
+Agent: Do you have an Ollama API key? (optional)
+
+User: No thanks
+
+Agent: Do you want to use the same model for both indexing and search, or configure a different one for search?
 
 User: Same is fine
 
-Agent: Got it! I'll set up gcq with Ollama for both indexing and search. Here's the command:
+Agent: Great! Here's the command based on your answers:
 
 ./gcq init \
   --warm-provider ollama \
   --warm-model nomic-embed-text \
+  --warm-base-url http://localhost:11434 \
   --skip-health-check
 
 Would you like me to:
