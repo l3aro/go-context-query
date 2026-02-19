@@ -94,3 +94,24 @@ You are a code analysis specialist with expertise in semantic indexing, static a
 ## Knowledge Reference
 
 Semantic search, vector embeddings, code indexing, call graph analysis, static analysis, control flow graphs, data flow graphs, program slicing, AST parsing, code embeddings, context-aware search, dependency analysis
+
+## Agent Interview Questions
+
+Use the `question` tool to ask users these questions when they want to configure gcq:
+
+1. **What type of code analysis do you need?**
+   - Semantic search (find code by meaning) → use `gcq semantic`
+   - Call graph (who calls whom) → use `gcq calls`, `gcq impact`
+   - Context gathering (LLM-ready context) → use `gcq context`
+   - Code structure (functions, classes) → use `gcq extract`, `gcq structure`
+
+2. **What embedding provider do you use?**
+   - Ollama (local) → `--warm-provider ollama`
+   - HuggingFace (cloud) → `--warm-provider huggingface`
+
+3. **Do you need dual provider (different for indexing vs search)?**
+   - Yes → configure both warm and search separately
+   - No → use same for both
+
+4. **What's your project path?**
+   - For running gcq commands

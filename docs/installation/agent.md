@@ -192,3 +192,36 @@ The skill provides:
 - Command reference for all 15 gcq commands
 - Workflows for common analysis tasks
 - Configuration guidance
+
+## Agent Configuration Interview Pattern
+
+When helping users configure gcq, agents should use the `question` tool to interview users:
+
+### Questions to Ask
+
+1. **What type of code analysis do you need?**
+   - Guide user to choose: semantic search, call graph, context gathering, or code structure
+
+2. **What embedding provider do you use?**
+   - Ollama (local) or HuggingFace (cloud)
+
+3. **Do you need dual provider?**
+   - Different models for indexing vs search
+
+4. **What's your project path?**
+   - Where to run gcq commands
+
+### Flag Mapping
+
+After interviewing, map answers to gcq init flags:
+- Ollama → `--warm-provider ollama`
+- HuggingFace → `--warm-provider huggingface`
+- With search → add `--search-provider` flags
+- Skip health check → `--skip-health-check`
+- Install skill → `--skill`
+
+### Example
+
+```bash
+gcq init --warm-provider ollama --warm-model nomic-embed-text --skip-health-check --skill
+```

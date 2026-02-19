@@ -2,6 +2,7 @@ package commands
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -41,6 +42,14 @@ func runInit(cmd *cobra.Command) error {
 	locationFlag, _ := cmd.Flags().GetString("location")
 	yesFlag, _ := cmd.Flags().GetBool("yes")
 	skipHealthCheck, _ := cmd.Flags().GetBool("skip-health-check")
+	skillFlag, _ := cmd.Flags().GetBool("skill")
+
+	// Handle skill installation (can be used in both modes)
+	if skillFlag {
+		if err := installSkill(); err != nil {
+			return fmt.Errorf("installing skill: %w", err)
+		}
+	}
 
 	// Determine if non-interactive mode (any config flag provided)
 	isNonInteractive := warmProviderFlag != "" || warmModelFlag != "" ||
@@ -656,6 +665,66 @@ func updateGitignore(configPath string) (bool, error) {
 	return true, nil
 }
 
+func installSkill() error {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("getting home directory: %w", err)
+	}
+
+	destDir := filepath.Join(homeDir, ".agents", "skills", "gcq")
+	if err := os.MkdirAll(destDir, 0755); err != nil {
+		return fmt.Errorf("creating skill directory: %w", err)
+	}
+
+	skillFiles := []string{
+		"SKILL.md",
+		"references/commands.md",
+		"references/config.md",
+	}
+
+	exeDir, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("getting current directory: %w", err)
+	}
+
+	for _, file := range skillFiles {
+		srcPath := filepath.Join(exeDir, ".agents", "skills", "gcq", file)
+		destPath := filepath.Join(destDir, file)
+
+		srcInfo, err := os.Stat(srcPath)
+		if err != nil {
+			continue
+		}
+
+		if srcInfo.IsDir() {
+			continue
+		}
+
+		if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
+			return fmt.Errorf("creating directory for %s: %w", file, err)
+		}
+
+		srcFile, err := os.Open(srcPath)
+		if err != nil {
+			return fmt.Errorf("opening source file %s: %w", file, err)
+		}
+		defer srcFile.Close()
+
+		destFile, err := os.Create(destPath)
+		if err != nil {
+			return fmt.Errorf("creating destination file %s: %w", file, err)
+		}
+		defer destFile.Close()
+
+		if _, err := io.Copy(destFile, srcFile); err != nil {
+			return fmt.Errorf("copying file %s: %w", file, err)
+		}
+	}
+
+	fmt.Printf("Skill installed to: %s\n", destDir)
+	return nil
+}
+
 func init() {
 	initCmd.Flags().String("warm-provider", "", "Warm provider: ollama or huggingface (required in non-interactive mode)")
 	initCmd.Flags().String("warm-model", "", "Warm model name (optional, has sensible defaults)")
@@ -668,6 +737,7 @@ func init() {
 	initCmd.Flags().String("location", "", "Config location: project (default: project)")
 	initCmd.Flags().BoolP("yes", "y", false, "Skip all confirmations, overwrite if exists")
 	initCmd.Flags().Bool("skip-health-check", false, "Skip health check after initialization")
+	initCmd.Flags().Bool("skill", false, "Install gcq skill files to ~/.agents/skills/gcq/")
 
 	RootCmd.AddCommand(initCmd)
 }
